@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { TrendModule } from './trend.module';
 import { ConfigModule } from '../common/config/config.module';
 import { ConfigService } from '@nestjs/config';
+import { HealthController } from './health.controller';
 
 /**
  * Trend 서비스 전용 AppModule
@@ -25,6 +26,7 @@ import { ConfigService } from '@nestjs/config';
     }),
     TrendModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

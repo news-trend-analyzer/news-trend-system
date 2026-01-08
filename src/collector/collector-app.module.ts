@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { CollectorModule } from './collector.module';
 import { ConfigModule } from '../common/config/config.module';
 import { ConfigService } from '@nestjs/config';
+import { HealthController } from './controllers/health.controller';
 
 /**
  * Collector 서비스 전용 AppModule
@@ -25,6 +26,7 @@ import { ConfigService } from '@nestjs/config';
     }),
     CollectorModule,
   ],
+  controllers: [HealthController],
   providers: [
     {
       provide: APP_GUARD,

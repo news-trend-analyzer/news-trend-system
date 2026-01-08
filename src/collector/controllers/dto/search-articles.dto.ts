@@ -1,5 +1,5 @@
-import { IsNotEmpty, IsOptional, IsString, IsInt, Min, Max, Type } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsNotEmpty, IsOptional, IsString, IsInt, Min, Max } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 /**
  * 기사 검색 요청 DTO
