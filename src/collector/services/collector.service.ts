@@ -6,6 +6,7 @@ import { ParsedRssItem, Article } from '../models/article.model';
 import { CollectResult, HandleXmlResultParams } from '../models/collector.model';
 import { isNewArticle } from '../utils/dedupe';
 import { ARTICLE_SINK, ArticleSink } from '../sink/article-sink';
+import { ArticleSearchService } from '../../common/elasticsearch/article-search.service';
 
 @Injectable()
 export class CollectorService {
@@ -14,6 +15,7 @@ export class CollectorService {
   constructor(
     @Inject(ARTICLE_SINK)
     private readonly articleSink: ArticleSink,
+    private readonly articleSearchService: ArticleSearchService,
   ) {}
 
   /**
@@ -26,6 +28,7 @@ export class CollectorService {
     await this.collectBatched(toSave);
     const took = Date.now() - started;
     await this.articleSink.save(toSave);
+    await this.saveToSearchIndex(toSave);
     this.logger.log(
       `✅ RSS 수집 완료 (${took}ms, saved=${toSave.length})`,
     );
@@ -97,5 +100,20 @@ export class CollectorService {
         toSave.push(article);
       }
     });
+  }
+
+  private async saveToSearchIndex(articles: Article[]): Promise<void> {
+    if (articles.length === 0) {
+      return;
+    }
+    try {
+      await this.articleSearchService.bulkIndexArticles(articles);
+    } catch (error) {
+      this.logger.warn(
+        `Elasticsearch 색인 실패 (count=${articles.length}): ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

@@ -8,10 +8,17 @@ import { ScraperService } from './services/scraper.service';
 import { SchedulerService } from './services/scheduler.service';
 import { ARTICLE_SINK } from './sink/article-sink';
 import { FileArticleSink } from './sink/file-article-sink';
+import { ElasticsearchModule } from '../common/elasticsearch/elasticsearch.module';
+import { ArticleSearchController } from './controllers/article-search.controller';
 
 @Module({
-  imports: [MessageQueueModule, ScheduleModule.forRoot(), TrendModule],
-  controllers: [CollectorController],
+  imports: [
+    MessageQueueModule,
+    ScheduleModule.forRoot(),
+    TrendModule,
+    ElasticsearchModule,
+  ],
+  controllers: [CollectorController, ArticleSearchController],
   providers: [
     CollectorService,
     ScraperService,
