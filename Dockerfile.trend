@@ -6,7 +6,12 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build && \
+    echo "=== Build output structure ===" && \
+    find /app/dist -type f -name "*.js" | head -20 && \
+    echo "=== Checking trend main.js ===" && \
+    ls -la /app/dist/src/trend/ || echo "trend directory not found" && \
+    test -f /app/dist/src/trend/main.js || (echo "ERROR: Build failed - main.js not found at /app/dist/src/trend/main.js" && find /app/dist -name "main.js" && exit 1)
 
 FROM node:20-alpine AS runner
 
@@ -19,7 +24,11 @@ RUN npm ci --only=production
 
 COPY --from=builder /app/dist ./dist
 
+# 빌드된 파일 확인
+RUN ls -la /app/dist/src/trend/ && \
+    test -f /app/dist/src/trend/main.js || (echo "main.js not found in runner stage" && exit 1)
+
 EXPOSE 3002
 
-CMD ["node", "dist/src/trend/main.js"]
+CMD ["node", "/app/dist/src/trend/main.js"]
 

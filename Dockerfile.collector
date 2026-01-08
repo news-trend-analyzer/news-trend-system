@@ -6,7 +6,12 @@ COPY package*.json ./
 RUN npm ci
 
 COPY . .
-RUN npm run build
+RUN npm run build && \
+    echo "=== Build output structure ===" && \
+    find /app/dist -type f -name "*.js" | head -20 && \
+    echo "=== Checking collector main.js ===" && \
+    ls -la /app/dist/src/collector/ || echo "collector directory not found" && \
+    test -f /app/dist/src/collector/main.js || (echo "ERROR: Build failed - main.js not found at /app/dist/src/collector/main.js" && find /app/dist -name "main.js" && exit 1)
 
 FROM node:20-alpine AS runner
 
@@ -19,7 +24,11 @@ RUN npm ci --only=production
 
 COPY --from=builder /app/dist ./dist
 
+# 빌드된 파일 확인
+RUN ls -la /app/dist/src/collector/ && \
+    test -f /app/dist/src/collector/main.js || (echo "main.js not found in runner stage" && exit 1)
+
 EXPOSE 3001
 
-CMD ["node", "dist/src/collector/main.js"]
+CMD ["node", "/app/dist/src/collector/main.js"]
 
