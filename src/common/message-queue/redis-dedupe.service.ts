@@ -13,6 +13,8 @@ export class RedisDedupeService {
   private readonly keyPrefix = 'seen:article:';
 
   constructor(private readonly configService: ConfigService) {
+    // Docker Compose 환경에서는 'redis' 사용
+    // 로컬 개발 환경에서는 'localhost' 사용
     this.redis = new Redis({
       host: this.configService.get<string>('REDIS_HOST', 'localhost'),
       port: this.configService.get<number>('REDIS_PORT', 6379),
@@ -87,6 +89,8 @@ export class RedisDedupeService {
     await this.redis.quit();
   }
 }
+
+
 
 
 

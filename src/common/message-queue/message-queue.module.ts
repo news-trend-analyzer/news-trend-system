@@ -11,6 +11,8 @@ import { RedisDedupeService } from './redis-dedupe.service';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         connection: {
+          // Docker Compose 환경에서는 'redis' 사용
+          // 로컬 개발 환경에서는 'localhost' 사용
           host: configService.get<string>('REDIS_HOST', 'localhost'),
           port: configService.get<number>('REDIS_PORT', 6379),
           password: configService.get<string>('REDIS_PASSWORD'),
