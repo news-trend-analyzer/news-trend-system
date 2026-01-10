@@ -62,7 +62,17 @@ export class ArticleSearchService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    await this.ensureIndex();
+    try {
+      await this.ensureIndex();
+      this.logger.log(`Elasticsearch index ready: ${this.indexName}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to ensure Elasticsearch index: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw error;
+    }
   }
 
   /**
@@ -85,7 +95,7 @@ export class ArticleSearchService implements OnModuleInit {
               {
                 multi_match: {
                   query: params.query,
-                  fields: ['title^3', 'description', 'press', 'category'],
+                  fields: ['title^3', 'description'],
                   type: 'phrase_prefix',
                   slop: 2,
                 },
@@ -93,8 +103,24 @@ export class ArticleSearchService implements OnModuleInit {
               {
                 multi_match: {
                   query: params.query,
-                  fields: ['title^3', 'description', 'press', 'category'],
+                  fields: ['title^3', 'description'],
                   type: 'bool_prefix',
+                },
+              },
+              {
+                match: {
+                  press: {
+                    query: params.query,
+                    operator: 'or',
+                  },
+                },
+              },
+              {
+                match: {
+                  category: {
+                    query: params.query,
+                    operator: 'or',
+                  },
                 },
               },
             ],
@@ -151,88 +177,113 @@ export class ArticleSearchService implements OnModuleInit {
     if (articles.length === 0) {
       return;
     }
-    const operations = articles.flatMap((article) => {
-      const document = this.mapArticle(article);
-      return [
-        { index: { _index: this.indexName, _id: document.id } },
-        document,
-      ];
-    });
-    const result = await this.elasticsearchService.bulk({
-      operations,
-      refresh: false,
-    });
-    if (result.errors) {
-      const failedItems = (result.items ?? []).filter((item: unknown) => {
-        const indexResult = (item as { index?: { error?: unknown } }).index;
-        return Boolean(indexResult?.error);
+    try {
+      const operations = articles.flatMap((article) => {
+        const document = this.mapArticle(article);
+        return [
+          { index: { _index: this.indexName, _id: document.id } },
+          document,
+        ];
       });
-      const sampleErrors = failedItems.slice(0, 3);
-      this.logger.warn(
-        `Failed to index some articles to ${this.indexName}. ` +
-          `failedCount=${failedItems.length}, sampleErrors=${JSON.stringify(sampleErrors)}`,
+      const result = await this.elasticsearchService.bulk({
+        operations,
+        refresh: false,
+      });
+      if (result.errors) {
+        const failedItems = (result.items ?? []).filter((item: unknown) => {
+          const indexResult = (item as { index?: { error?: unknown } }).index;
+          return Boolean(indexResult?.error);
+        });
+        const sampleErrors = failedItems.slice(0, 3);
+        this.logger.warn(
+          `Failed to index some articles to ${this.indexName}. ` +
+            `failedCount=${failedItems.length}, total=${articles.length}, sampleErrors=${JSON.stringify(sampleErrors)}`,
+        );
+      } else {
+        this.logger.log(
+          `Successfully indexed ${articles.length} articles to ${this.indexName}`,
+        );
+      }
+    } catch (error) {
+      this.logger.error(
+        `Elasticsearch bulk index failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error.stack : undefined,
       );
+      throw error;
     }
   }
 
   private async ensureIndex(): Promise<void> {
-    const exists = await this.elasticsearchService.indices.exists({
-      index: this.indexName,
-    });
-    if (exists) {
-      return;
+    try {
+      const exists = await this.elasticsearchService.indices.exists({
+        index: this.indexName,
+      });
+      if (exists) {
+        this.logger.log(`Elasticsearch index already exists: ${this.indexName}`);
+        return;
+      }
+      await this.elasticsearchService.indices.create({
+        index: this.indexName,
+        settings: {
+          analysis: {
+            filter: {
+              title_edge_ngram: {
+                type: 'edge_ngram',
+                min_gram: 1,
+                max_gram: 20,
+              },
+            },
+            analyzer: {
+              title_ngram_analyzer: {
+                type: 'custom',
+                tokenizer: 'standard',
+                filter: ['lowercase', 'title_edge_ngram'],
+              },
+              title_search_analyzer: {
+                type: 'custom',
+                tokenizer: 'standard',
+                filter: ['lowercase'],
+              },
+            },
+          },
+          index: {
+            number_of_shards: 1,
+            number_of_replicas: 0,
+          },
+        },
+        mappings: {
+          properties: {
+            id: { type: 'keyword' },
+            title: {
+              type: 'text',
+              analyzer: 'title_ngram_analyzer',
+              search_analyzer: 'title_search_analyzer',
+            },
+            link: { type: 'keyword' },
+            press: { type: 'keyword' },
+            category: { type: 'keyword' },
+            description: { type: 'text' },
+            pubDate: {
+              type: 'date',
+              format:
+                'EEE, d MMM yyyy HH:mm:ss Z||EEE, dd MMM yyyy HH:mm:ss Z||strict_date_optional_time',
+            },
+            collectedAt: { type: 'date', format: 'strict_date_optional_time' },
+          },
+        },
+      });
+      this.logger.log(`Created Elasticsearch index: ${this.indexName}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to ensure Elasticsearch index ${this.indexName}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      throw error;
     }
-    await this.elasticsearchService.indices.create({
-      index: this.indexName,
-      settings: {
-        analysis: {
-          filter: {
-            title_edge_ngram: {
-              type: 'edge_ngram',
-              min_gram: 1,
-              max_gram: 20,
-            },
-          },
-          analyzer: {
-            title_ngram_analyzer: {
-              type: 'custom',
-              tokenizer: 'standard',
-              filter: ['lowercase', 'title_edge_ngram'],
-            },
-            title_search_analyzer: {
-              type: 'custom',
-              tokenizer: 'standard',
-              filter: ['lowercase'],
-            },
-          },
-        },
-        index: {
-          number_of_shards: 1,
-          number_of_replicas: 0,
-        },
-      },
-      mappings: {
-        properties: {
-          id: { type: 'keyword' },
-          title: {
-            type: 'text',
-            analyzer: 'title_ngram_analyzer',
-            search_analyzer: 'title_search_analyzer',
-          },
-          link: { type: 'keyword' },
-          press: { type: 'keyword' },
-          category: { type: 'keyword' },
-          description: { type: 'text' },
-          pubDate: {
-            type: 'date',
-            format:
-              'EEE, d MMM yyyy HH:mm:ss Z||EEE, dd MMM yyyy HH:mm:ss Z||strict_date_optional_time',
-          },
-          collectedAt: { type: 'date', format: 'strict_date_optional_time' },
-        },
-      },
-    });
-    this.logger.log(`Created Elasticsearch index: ${this.indexName}`);
   }
 
   private mapArticle(article: Article): ArticleSearchDocument {
