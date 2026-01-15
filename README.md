@@ -7,7 +7,7 @@
 ## 🔗 Links
 
 - **Service URL**: https://trendlab.dev 
-- **Blog**: https://velog.io/@hyeok2/series/%EC%8B%A4%EC%8B%9C%EA%B0%84%ED%8A%B8%EB%A0%8C%EB%93%9C%EB%B6%84%EC%84%9D-%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8
+- **Blog**: [https://velog.io/@hyeok2/series/%EC%8B%A4%EC%8B%9C%EA%B0%84%ED%8A%B8%EB%A0%8C%EB%93%9C%EB%B6%84%EC%84%9D-%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8](https://velog.io/@hyeok2/series/news-trend-system)
 
 ---
 
@@ -59,7 +59,7 @@
 AWS EC2 환경에서 Docker Compose 기반으로 배포된 시스템 구성입니다.
 
 <p align="center">
-  <img src="https://github.com/user-attachments/assets/77133790-0101-4532-b7e3-331406caea25" width="80%" />
+  <img src="https://github.com/user-attachments/assets/a6437ba7-034d-44cc-9cf5-5196744366a0" width="80%" />
 </p>
 
 ---
