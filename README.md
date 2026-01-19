@@ -8,7 +8,7 @@
 
 - **Service URL**: https://trendlab.dev 
 - **Blog**: [https://velog.io/@hyeok2/series/%EC%8B%A4%EC%8B%9C%EA%B0%84%ED%8A%B8%EB%A0%8C%EB%93%9C%EB%B6%84%EC%84%9D-%ED%94%84%EB%A1%9C%EC%A0%9D%ED%8A%B8](https://velog.io/@hyeok2/series/news-trend-system)
-
+- **Front Github**: https://github.com/news-trend-analyzer/new-trend-system-fe
 ---
 
 ## 👀 Service Preview
