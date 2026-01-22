@@ -25,7 +25,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     '등', '있다', '연합뉴스', '뉴스', '사진', '제공',
     '가능성', '상황', '문제', '이슈', '내용', '기술', '오늘',
     '기업', '감독', '배우', '대표', '수사', '사업', '판매', '지원', '속보',
-    '사진아이덴티티', '포토', '사설', 'AI', '2026' ,'대한민국', '퍼스트브랜드' , '포토+'
+    '사진아이덴티티', '포토', '사설', 'AI', '2026' ,'대한민국', '퍼스트브랜드' , '포토+', 
   ];
   
   // Redis Keys
@@ -494,11 +494,14 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
         if (hScore) recentScore += parseFloat(hScore);
       }
 
+      const trendScore = this.calculateTrendScore(totalScore, recentScore);
+
       trends.push({
         keyword: keyword,
         displayKeyword: displayKeyword,
         totalScore,
         recentScore,
+        trendScore,
         rank: currentRank,
         rankChange: Math.abs(rankChange),
         status,
@@ -506,7 +509,9 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       });
     }
 
-    return trends;
+    return trends
+      .sort((a, b) => b.totalScore - a.totalScore)
+      .slice(0, limit);
   }
 
   /**
