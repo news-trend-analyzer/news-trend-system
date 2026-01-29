@@ -103,6 +103,38 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   ARTICLE_SINK_PATH?: string;
+
+  @IsOptional()
+  @IsString()
+  DATABASE_URL?: string;
+
+  @IsOptional()
+  @IsString()
+  DB_HOST?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(65535)
+  DB_PORT?: number;
+
+  @IsOptional()
+  @IsString()
+  DB_USERNAME?: string;
+
+  @IsOptional()
+  @IsString()
+  DB_PASSWORD?: string;
+
+  @IsOptional()
+  @IsString()
+  DB_DATABASE?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(60)
+  BUCKET_MINUTES?: number;
 }
 
 /**
