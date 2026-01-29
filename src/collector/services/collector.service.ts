@@ -1,14 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { RSS_SOURCES } from '../rss/rss-sources';
 import { fetchRSS } from '../rss/rss-fetcher';
 import { parseRSS } from '../rss/rss-parser';
 import { ParsedRssItem, Article } from '../models/article.model';
 import { CollectResult, HandleXmlResultParams } from '../models/collector.model';
 import { isNewArticle } from '../utils/dedupe';
+import { ARTICLE_SINK, ArticleSink } from '../sink/article-sink';
 
 @Injectable()
 export class CollectorService {
   private readonly logger = new Logger(CollectorService.name);
+
+  constructor(
+    @Inject(ARTICLE_SINK)
+    private readonly articleSink: ArticleSink,
+  ) {}
 
   /**
    * RSS 피드에서 기사를 수집하여 저장
@@ -18,6 +24,7 @@ export class CollectorService {
     const toSave: Article[] = [];
     const started = Date.now();
     await this.collectBatched(toSave);
+    await this.articleSink.save(toSave);
     const took = Date.now() - started;
     this.logger.log(
       `✅ RSS 수집 완료 (${took}ms, collected=${toSave.length})`,
