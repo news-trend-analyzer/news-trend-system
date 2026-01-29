@@ -56,6 +56,13 @@ services:
       - ALLOWED_ADMIN_IPS=${ALLOWED_ADMIN_IPS:-}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-100}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - DB_HOST=${DB_HOST:-host.docker.internal}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USERNAME=${DB_USERNAME:-trendlab}
+      - DB_PASSWORD=${DB_PASSWORD:-trendlab_password}
+      - DB_DATABASE=${DB_DATABASE:-trendlab}
+      - BUCKET_MINUTES=${BUCKET_MINUTES:-5}
     volumes:
       - ./data:/app/data
     depends_on:
@@ -107,6 +114,13 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - THROTTLE_TTL=${THROTTLE_TTL:-60}
       - THROTTLE_LIMIT=${THROTTLE_LIMIT:-100}
+      - DATABASE_URL=${DATABASE_URL:-}
+      - DB_HOST=${DB_HOST:-host.docker.internal}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USERNAME=${DB_USERNAME:-trendlab}
+      - DB_PASSWORD=${DB_PASSWORD:-trendlab_password}
+      - DB_DATABASE=${DB_DATABASE:-trendlab}
+      - BUCKET_MINUTES=${BUCKET_MINUTES:-5}
     depends_on:
       redis:
         condition: service_healthy
