@@ -9,6 +9,14 @@ import { ConfigService } from '@nestjs/config';
 import { Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { ScrapedArticle } from '../collector/models/article.model';
+import { KeywordRepository } from '../common/database/keyword.repository';
+
+type KeywordScore = Readonly<{ keyword: string; score: number }>;
+
+type PendingKeywordSave = Readonly<{
+  articleId: number;
+  keywords: ReadonlyArray<KeywordScore>;
+}>;
 
 /**
  * 트렌드 분석 서비스
@@ -19,6 +27,10 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(TrendAnalysisService.name);
   private worker: Worker | null = null;
   private readonly redis: Redis;
+  private readonly keywordSaveBatchSize = 50;
+  private readonly pendingKeywordSaves: PendingKeywordSave[] = [];
+  private isFlushingKeywordSaves = false;
+  private keywordFlushIntervalId: NodeJS.Timeout | null = null;
   private readonly STOP_WORDS = [
     '기자', '보도', '관련', '이번', '대한', '통해', '에서',
     '으로', '했다', '한다', '있는', '그리고', '하지만',
@@ -50,6 +62,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @InjectQueue('articles') private readonly articlesQueue: Queue,
     private readonly configService: ConfigService,
+    private readonly keywordRepository: KeywordRepository,
   ) {
     this.redis = new Redis({
       host: this.configService.get<string>('REDIS_HOST', 'localhost'),
@@ -124,6 +137,13 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
         this.logger.error('데이터 정리 실패', err)
       );
     }, 60 * 60 * 1000);
+
+    // 30초마다 남은 키워드 배치 flush (트래픽이 적어도 DB 누적 저장되도록)
+    this.keywordFlushIntervalId = setInterval(() => {
+      this.flushKeywordSaves().catch((err) =>
+        this.logger.error('키워드 배치 flush 실패', err),
+      );
+    }, 30 * 1000);
   }
 
   /**
@@ -134,6 +154,11 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       await this.worker.close();
       this.logger.log('트렌드 분석 Worker가 종료되었습니다.');
     }
+    if (this.keywordFlushIntervalId) {
+      clearInterval(this.keywordFlushIntervalId);
+      this.keywordFlushIntervalId = null;
+    }
+    await this.flushKeywordSaves();
     await this.redis.quit();
   }
 
@@ -145,13 +170,19 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`트렌드 분석 시작: ${article.title} (${article.link})`);
     try {
       const result = this.analyzeTrend(article);
-      await this.aggregateKeywords(
+      const isNewArticle = await this.aggregateKeywords(
         result.keywords,
         article.title,
         result.compositeKey,
         result.score,
         article.link,
       );
+      if (isNewArticle) {
+        await this.enqueueKeywordSave({
+          articleId: article.articleId,
+          keywords: result.keywords,
+        });
+      }
       this.logger.log(
         `트렌드 분석 완료: ${article.title} - 키워드 ${result.total}개 추출 및 집계 완료`,
       );
@@ -324,8 +355,10 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     compositeKey?: string,
     compositeScore?: number,
     articleLink?: string,
-  ) {
-    if (!compositeKey || !compositeScore || keywords.length < 2) return;
+  ): Promise<boolean> {
+    if (!compositeKey || !compositeScore || keywords.length < 2) {
+      return false;
+    }
 
     const words = compositeKey.split(':');
     const now = Date.now();
@@ -345,7 +378,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     
     if (result === 0) {
       this.logger.log(`중복 기사 스킵: ${articleTitle}`);
-      return;
+      return false;
     }
 
     // 단일 키워드별 Lua 스크립트 실행 (Promise.all로 제어)
@@ -410,6 +443,80 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     }
 
     await pipeline.exec();
+    return true;
+  }
+
+  /**
+   * 키워드 저장 배치를 큐에 추가하고 필요 시 flush
+   */
+  private async enqueueKeywordSave(params: {
+    articleId?: number;
+    keywords: ReadonlyArray<KeywordScore>;
+  }): Promise<void> {
+    if (!params.articleId) {
+      return;
+    }
+    if (params.keywords.length < 2) {
+      return;
+    }
+    this.pendingKeywordSaves.push({
+      articleId: params.articleId,
+      keywords: params.keywords,
+    });
+    if (this.pendingKeywordSaves.length >= this.keywordSaveBatchSize) {
+      await this.flushKeywordSaves();
+    }
+  }
+
+  /**
+   * 누적 저장용 bucket time 계산
+   */
+  private createBucketTime(date: Date): Date {
+    const bucketMinutes = this.configService.get<number>('BUCKET_MINUTES', 5);
+    const minutes = date.getUTCMinutes();
+    const floored = minutes - (minutes % bucketMinutes);
+    return new Date(
+      Date.UTC(
+        date.getUTCFullYear(),
+        date.getUTCMonth(),
+        date.getUTCDate(),
+        date.getUTCHours(),
+        floored,
+        0,
+        0,
+      ),
+    );
+  }
+
+  /**
+   * pendingKeywordSaves를 DB로 배치 저장
+   */
+  private async flushKeywordSaves(): Promise<void> {
+    if (this.isFlushingKeywordSaves) {
+      return;
+    }
+    if (this.pendingKeywordSaves.length === 0) {
+      return;
+    }
+    this.isFlushingKeywordSaves = true;
+    const batch = this.pendingKeywordSaves.splice(0, this.keywordSaveBatchSize);
+    try {
+      await this.keywordRepository.saveKeywordsWithRelationsBatch({
+        articles: batch.map((item) => ({
+          articleId: item.articleId,
+          keywords: item.keywords as Array<{ keyword: string; score: number }>,
+        })),
+        bucketTime: this.createBucketTime(new Date()),
+      });
+    } catch (error) {
+      this.logger.error(
+        `키워드 배치 저장 실패: ${batch.length}건`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      this.pendingKeywordSaves.unshift(...batch);
+    } finally {
+      this.isFlushingKeywordSaves = false;
+    }
   }
 
   /**
