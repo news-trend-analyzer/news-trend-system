@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { MessageQueueModule } from '../common/message-queue/message-queue.module';
 import { TrendAnalysisService } from './trend.service';
 import { TrendController } from './trend.controller';
+import { DatabaseModule } from '../common/database/database.module';
 
 @Module({
   imports: [
@@ -10,6 +11,7 @@ import { TrendController } from './trend.controller';
     BullModule.registerQueue({
       name: 'articles',
     }),
+    DatabaseModule,
   ],
   controllers: [TrendController],
   providers: [TrendAnalysisService],

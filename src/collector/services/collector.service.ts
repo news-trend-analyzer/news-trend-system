@@ -1,22 +1,14 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { RSS_SOURCES } from '../rss/rss-sources';
 import { fetchRSS } from '../rss/rss-fetcher';
 import { parseRSS } from '../rss/rss-parser';
 import { ParsedRssItem, Article } from '../models/article.model';
 import { CollectResult, HandleXmlResultParams } from '../models/collector.model';
 import { isNewArticle } from '../utils/dedupe';
-import { ARTICLE_SINK, ArticleSink } from '../sink/article-sink';
-import { ArticleSearchService } from '../../common/elasticsearch/article-search.service';
 
 @Injectable()
 export class CollectorService {
   private readonly logger = new Logger(CollectorService.name);
-
-  constructor(
-    @Inject(ARTICLE_SINK)
-    private readonly articleSink: ArticleSink,
-    private readonly articleSearchService: ArticleSearchService,
-  ) {}
 
   /**
    * RSS 피드에서 기사를 수집하여 저장
@@ -27,10 +19,8 @@ export class CollectorService {
     const started = Date.now();
     await this.collectBatched(toSave);
     const took = Date.now() - started;
-    await this.articleSink.save(toSave);
-    await this.saveToSearchIndex(toSave);
     this.logger.log(
-      `✅ RSS 수집 완료 (${took}ms, saved=${toSave.length})`,
+      `✅ RSS 수집 완료 (${took}ms, collected=${toSave.length})`,
     );
     return { savedCount: toSave.length, took };
   }
@@ -100,20 +90,5 @@ export class CollectorService {
         toSave.push(article);
       }
     });
-  }
-
-  private async saveToSearchIndex(articles: Article[]): Promise<void> {
-    if (articles.length === 0) {
-      return;
-    }
-    try {
-      await this.articleSearchService.bulkIndexArticles(articles);
-    } catch (error) {
-      this.logger.warn(
-        `Elasticsearch 색인 실패 (count=${articles.length}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
   }
 }

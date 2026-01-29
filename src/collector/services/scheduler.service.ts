@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as fs from 'fs';
 import * as path from 'path';
-import { TrendAnalysisService } from '../../trend/trend.service';
 import { CollectorService } from './collector.service';
 import { ScraperService } from './scraper.service';
 
@@ -22,7 +21,6 @@ export class SchedulerService {
   constructor(
     private readonly collectorService: CollectorService,
     private readonly scraperService: ScraperService,
-    private readonly trendService: TrendAnalysisService,
   ) {}
 
   /**
@@ -80,21 +78,6 @@ export class SchedulerService {
     }
   }
 
-  /**
-   * 트렌드 랭킹 스냅샷 저장 (3분마다 실행)
-   */
-  @Cron('*/3 * * * *')
-  async saveTrendSnapshot() {
-    this.logger.log('📸 트렌드 랭킹 스냅샷 저장 시작');
-    try {
-      await this.trendService.saveSnapshot();
-    } catch (error) {
-      this.logger.error(
-        '❌ 트렌드 랭킹 스냅샷 저장 실패',
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
-  }
 
   /**
    * articles.jsonl 파일 초기화

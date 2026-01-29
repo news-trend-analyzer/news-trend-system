@@ -34,6 +34,8 @@ export interface NewsArticle {
 export interface ScrapedArticle extends NewsArticle {
   contentBody: string;
   crawledAt: string;
+  pubDate?: string | null;
+  articleId?: number;
 }
 
 
