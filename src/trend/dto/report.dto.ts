@@ -29,3 +29,15 @@ export class GetTimeSeriesDto {
   @Max(100)
   limit?: number = 5;
 }
+
+export class GetRelatedArticlesDto {
+  @IsNotEmpty()
+  @IsInt()
+  keywordId: number;
+}
+
+export class GetRelatedKeywordsDto {
+  @IsNotEmpty()
+  @IsInt()
+  keywordId: number;
+}
