@@ -16,5 +16,18 @@ export class DataReportController {
   async getTimeSeries( @Query() dto: GetTimeSeriesDto) {
     return this.dataReportService.getTimeSeries(dto);
   }
+
+  /**
+   * 전체 보유 키워드 개수 조회
+   */
+  @Get('count-keywords')
+  async getCountKeywords() {
+    return this.dataReportService.getCountKeywords();
+  }
+
+  @Get('count-articles')
+  async getCountArticles() {
+    return this.dataReportService.getCountArticles();
+  }
 }
 

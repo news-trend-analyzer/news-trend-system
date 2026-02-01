@@ -23,4 +23,12 @@ export class DataReportService {
 
     return await this.keywordRepository.getTimeKeywordsByKeywordId(keywordId, limit);
   }
+
+  async getCountKeywords(): Promise<number> {
+    return await this.keywordRepository.getTotalKeywords();
+  }
+
+  async getCountArticles(): Promise<number> {
+    return await this.articleRepository.getTotalArticles();
+  }
 }
