@@ -1,0 +1,19 @@
+import { Injectable } from '@nestjs/common';
+import { KeywordRepository } from '../../common/database/keyword.repository';
+import { ArticleRepository } from '../../common/database/article.repository';
+import { GetRankingDto } from '../dto/report.dto';
+import { TopKeyword } from '../../common/types/top-keyword.type';
+
+@Injectable()
+export class DataReportService {
+  constructor(
+    private readonly keywordRepository: KeywordRepository,
+    private readonly articleRepository: ArticleRepository,
+  ) {}
+
+  async getRanking(dto: GetRankingDto): Promise<TopKeyword[]> {
+    const { recentBuckets, limit } = dto;
+
+    return await this.keywordRepository.getRanking(recentBuckets, limit);
+  }
+}

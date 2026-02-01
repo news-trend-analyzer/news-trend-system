@@ -4,7 +4,7 @@ import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { KeywordEntity } from './entities/keyword.entity';
 import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
-
+import { TopKeyword } from '../types/top-keyword.type';
 /**
  * 키워드 저장소 서비스
  * Keywords, ArticleKeywords, KeywordTimeseries 테이블에 대한 저장 로직 제공
@@ -23,6 +23,36 @@ export class KeywordRepository {
     private readonly dataSource: DataSource,
   ) {}
 
+
+  async getRanking(recentBuckets: number, limit: number): Promise<TopKeyword[]> {
+    const query = `
+      WITH recent_buckets AS (
+        SELECT DISTINCT bucket_time
+        FROM keyword_timeseries
+        ORDER BY bucket_time DESC
+        LIMIT $1
+      )
+      SELECT
+        k.id AS "id",
+        k.display_text AS "displayText",
+        SUM(kt.freq)::bigint AS "freqSum",
+        SUM(kt.score_sum)::float8 AS "scoreSum"
+      FROM keyword_timeseries kt
+      JOIN recent_buckets rb ON rb.bucket_time = kt.bucket_time
+      JOIN keywords k ON k.id = kt.keyword_id
+      GROUP BY k.id, k.display_text
+      ORDER BY "scoreSum" DESC
+      LIMIT $2;
+    `;
+
+    const result = await this.dataSource.query(query, [recentBuckets, limit]);
+    return result.map((row) => ({
+      id: row.id,
+      displayText: row.displayText,
+      freqSum: row.freqSum,
+      scoreSum: row.scoreSum,
+    }));
+  }
   /**
    * 여러 기사의 키워드들을 배치로 저장 (성능 최적화)
    * @param params - 배치 저장 파라미터
