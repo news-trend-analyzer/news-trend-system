@@ -44,6 +44,15 @@ export class KeywordRepository {
       scoreSum: row.scoreSum,
     }));
   }
+
+  async getTotalKeywords(): Promise<number> {
+    const query = `
+      SELECT COUNT(*) FROM keywords;
+    `;
+    const result = await this.dataSource.query(query);
+    return result[0].count;
+  }
+  
   async getRanking(recentBuckets: number, limit: number): Promise<TopKeyword[]> {
     const query = `
       WITH recent_buckets AS (

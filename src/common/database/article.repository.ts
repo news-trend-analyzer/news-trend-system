@@ -17,6 +17,14 @@ export class ArticleRepository {
     private readonly dataSource: DataSource,
   ) {}
 
+  async getTotalArticles(): Promise<number> {
+    const query = `
+      SELECT COUNT(*) FROM articles;
+    `;
+    const result = await this.dataSource.query(query);
+    return result[0].count;
+  }
+
   /**
    * 기사를 URL 기준으로 upsert
    * @deprecated 레거시 메서드입니다. 현재 미사용. 대신 upsertArticlesBulk()를 사용하세요.
