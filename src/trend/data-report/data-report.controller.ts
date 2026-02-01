@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { DataReportService } from '../data-report/data-report.service';
-import { GetRankingDto, GetTimeSeriesDto } from '../dto/report.dto';
+import { GetRankingDto, GetTimeSeriesDto, GetRelatedArticlesDto, GetRelatedKeywordsDto } from '../dto/report.dto';
 
 @Controller('data-report')
 export class DataReportController {
@@ -28,6 +28,16 @@ export class DataReportController {
   @Get('count-articles')
   async getCountArticles() {
     return this.dataReportService.getCountArticles();
+  }
+
+  @Get('related-articles')
+  async getRelatedArticles(@Query() dto: GetRelatedArticlesDto) {
+    return this.dataReportService.getRelatedArticles(dto.keywordId);
+  }
+
+  @Get('related-keywords')
+  async getRelatedKeywords(@Query() dto: GetRelatedKeywordsDto) {
+    return this.dataReportService.getRelatedKeywords(dto.keywordId);
   }
 }
 

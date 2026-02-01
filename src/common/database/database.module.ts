@@ -9,7 +9,7 @@ import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
 import { KeywordAliasEntity } from './entities/keyword-alias.entity';
 import { ArticleRepository } from './article.repository';
 import { KeywordRepository } from './keyword.repository';
-
+import { ArticleKeywordRepository } from './article-keyword.repository';
 /**
  * 데이터베이스 연동 모듈
  * TypeORM을 사용하여 PostgreSQL 연결
@@ -64,8 +64,8 @@ import { KeywordRepository } from './keyword.repository';
       KeywordAliasEntity,
     ]),
   ],
-  providers: [ArticleRepository, KeywordRepository],
-  exports: [TypeOrmModule, ArticleRepository, KeywordRepository],
+  providers: [ArticleRepository, KeywordRepository, ArticleKeywordRepository],
+  exports: [TypeOrmModule, ArticleRepository, KeywordRepository, ArticleKeywordRepository],
 })
 export class DatabaseModule {}
 
