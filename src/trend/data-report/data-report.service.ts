@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { KeywordRepository } from '../../common/database/keyword.repository';
 import { ArticleRepository } from '../../common/database/article.repository';
-import { GetRankingDto } from '../dto/report.dto';
+import { GetRankingDto, GetTimeSeriesDto } from '../dto/report.dto';
 import { TopKeyword } from '../../common/types/top-keyword.type';
+import { TimeKeyword } from '../../common/types/time-keyword.type';
 
 @Injectable()
 export class DataReportService {
@@ -15,5 +16,11 @@ export class DataReportService {
     const { recentBuckets, limit } = dto;
 
     return await this.keywordRepository.getRanking(recentBuckets, limit);
+  }
+
+  async getTimeSeries(dto: GetTimeSeriesDto): Promise<TimeKeyword[]> {
+    const { keywordId, limit } = dto;
+
+    return await this.keywordRepository.getTimeKeywordsByKeywordId(keywordId, limit);
   }
 }

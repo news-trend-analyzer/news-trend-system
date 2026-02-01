@@ -5,6 +5,7 @@ import { KeywordEntity } from './entities/keyword.entity';
 import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
 import { TopKeyword } from '../types/top-keyword.type';
+import { TimeKeyword } from '../types/time-keyword.type';
 /**
  * 키워드 저장소 서비스
  * Keywords, ArticleKeywords, KeywordTimeseries 테이블에 대한 저장 로직 제공
@@ -23,7 +24,26 @@ export class KeywordRepository {
     private readonly dataSource: DataSource,
   ) {}
 
+  async getTimeKeywordsByKeywordId(keywordId: number, limit: number): Promise<TimeKeyword[]> {
+    const query = `
+      SELECT
+        bucket_time AS "bucketTime",
+        freq AS "freqSum",
+        score_sum AS "scoreSum"
+      FROM keyword_timeseries
+      WHERE keyword_id = $1
+      AND bucket_time >= NOW() - INTERVAL '24 hour'
+      ORDER BY bucket_time DESC
+      LIMIT $2;
+    `;
 
+    const result = await this.dataSource.query(query, [keywordId, limit]);
+    return result.map((row) => ({
+      bucketTime: row.bucketTime,
+      freqSum: row.freqSum,
+      scoreSum: row.scoreSum,
+    }));
+  }
   async getRanking(recentBuckets: number, limit: number): Promise<TopKeyword[]> {
     const query = `
       WITH recent_buckets AS (
