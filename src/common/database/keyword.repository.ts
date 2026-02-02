@@ -4,7 +4,7 @@ import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { KeywordEntity } from './entities/keyword.entity';
 import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
-import { TopKeyword } from '../types/top-keyword.type';
+import { TopKeyword, RankedKeyword } from '../types/top-keyword.type';
 import { TimeKeyword } from '../types/time-keyword.type';
 import { SearchKeyword } from '../types/keyword.type';
 /**
@@ -106,6 +106,71 @@ export class KeywordRepository {
       scoreSum: row.scoreSum,
     }));
   }
+
+  /**
+   * 최근 24시간 기준 상위 키워드 조회 (Single + Composite 포함)
+   * @param candidateLimit - 후보 키워드 개수 (필터링 전)
+   * @returns 랭킹 후보 키워드 배열
+   */
+  async findTopKeywords24h(candidateLimit: number = 50): Promise<RankedKeyword[]> {
+    const query = `
+      WITH score_24h AS (
+        SELECT
+          kt.keyword_id,
+          SUM(kt.score_sum)::float8 AS score_24h
+        FROM keyword_timeseries kt
+        WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'
+        GROUP BY kt.keyword_id
+      ),
+      score_recent AS (
+        SELECT
+          kt.keyword_id,
+          SUM(kt.score_sum)::float8 AS score_recent
+        FROM keyword_timeseries kt
+        WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
+        GROUP BY kt.keyword_id
+      ),
+      score_prev AS (
+        SELECT
+          kt.keyword_id,
+          SUM(kt.score_sum)::float8 AS score_prev
+        FROM keyword_timeseries kt
+        WHERE kt.bucket_time < (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
+          AND kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '2 hours'
+        GROUP BY kt.keyword_id
+      )
+      SELECT
+        k.id AS "id",
+        k.display_text AS "displayText",
+        k.type AS "type",
+        COALESCE(s24.score_24h, 0) AS "score24h",
+        COALESCE(sr.score_recent, 0) AS "scoreRecent",
+        COALESCE(sp.score_prev, 0) AS "scorePrev",
+        (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) AS "diffScore",
+        (
+          COALESCE(s24.score_24h, 0)
+          + GREATEST(COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0), 0) * 0.5
+        ) AS "finalScore"
+      FROM keywords k
+      JOIN score_24h s24 ON s24.keyword_id = k.id
+      LEFT JOIN score_recent sr ON sr.keyword_id = k.id
+      LEFT JOIN score_prev sp ON sp.keyword_id = k.id
+      ORDER BY "finalScore" DESC
+      LIMIT $1;
+    `;
+
+    const result = await this.dataSource.query(query, [candidateLimit]);
+    return result.map((row) => ({
+      id: row.id,
+      displayText: row.displayText,
+      type: row.type as 'SINGLE' | 'COMPOSITE' | null,
+      score24h: Number.parseFloat(row.score24h),
+      scoreRecent: Number.parseFloat(row.scoreRecent),
+      scorePrev: Number.parseFloat(row.scorePrev),
+      diffScore: Number.parseFloat(row.diffScore),
+      finalScore: Number.parseFloat(row.finalScore),
+    }));
+  }
   /**
    * 여러 기사의 키워드들을 배치로 저장 (성능 최적화)
    * @param params - 배치 저장 파라미터
@@ -156,10 +221,15 @@ export class KeywordRepository {
         const found = allValidKeywords.find((kw) => kw.normalizedText === normalized);
         return found ? found.keyword : normalized;
       });
+      // type 배열 생성 (복합키는 'COMPOSITE', 단일 키워드는 'SINGLE')
+      const types = uniqueNormalizedTexts.map((normalized) => 
+        this.isCompositeKeyword(normalized) ? 'COMPOSITE' : 'SINGLE'
+      );
       const keywordIdMap = await this.upsertKeywordsBulk(
         queryRunner,
         uniqueNormalizedTexts,
         uniqueDisplayTexts,
+        types,
       );
       // article_keywords 배치 저장
       await this.insertArticleKeywordsBatch(
@@ -219,10 +289,14 @@ export class KeywordRepository {
       }
       const normalizedTexts = validKeywords.map((kw) => kw.normalizedText);
       const displayTexts = validKeywords.map((kw) => kw.keyword);
+      const types = normalizedTexts.map((normalized) => 
+        this.isCompositeKeyword(normalized) ? 'COMPOSITE' : 'SINGLE'
+      );
       const keywordIdMap = await this.upsertKeywordsBulk(
         queryRunner,
         normalizedTexts,
         displayTexts,
+        types,
       );
       await this.insertArticleKeywordsBulk(
         queryRunner,
@@ -255,20 +329,23 @@ export class KeywordRepository {
    * @param queryRunner - 트랜잭션 QueryRunner
    * @param normalizedTexts - 정규화된 키워드 텍스트 배열
    * @param displayTexts - 표시용 키워드 텍스트 배열
+   * @param types - 키워드 타입 배열 ('SINGLE' 또는 'COMPOSITE')
    * @returns 키워드 ID 맵 (normalizedText -> keywordId)
    */
   private async upsertKeywordsBulk(
     queryRunner: QueryRunner,
     normalizedTexts: string[],
     displayTexts: string[],
+    types: string[],
   ): Promise<Map<string, number>> {
-    const types = new Array(normalizedTexts.length).fill(null);
     const query = `
       INSERT INTO keywords (normalized_text, display_text, type)
       SELECT * FROM UNNEST($1::VARCHAR(255)[], $2::VARCHAR(255)[], $3::VARCHAR(30)[])
       AS t(normalized_text, display_text, type)
       ON CONFLICT (normalized_text)
-      DO UPDATE SET display_text = EXCLUDED.display_text
+      DO UPDATE SET 
+        display_text = EXCLUDED.display_text,
+        type = COALESCE(EXCLUDED.type, keywords.type)
       RETURNING id, normalized_text
     `;
     const result = await queryRunner.query(query, [
@@ -506,6 +583,7 @@ export class KeywordRepository {
 
   /**
    * 키워드 정규화 (노이즈 제거 및 정규화)
+   * 복합키의 경우 정렬 후 조인하여 canonical form 생성
    * @param keyword - 원본 키워드
    * @returns 정규화된 키워드
    */
@@ -518,10 +596,33 @@ export class KeywordRepository {
     normalized = normalized.replace(/^(주식회사|\(주\)|주\)|기자|사진|제공|속보)\s*/i, '');
     normalized = normalized.replace(/\s*(기자|사진|제공|속보)$/i, '');
     normalized = normalized.trim();
-    if (normalized.length < 2 || normalized.length > 40) {
+    
+    // 복합키 처리 (':'로 구분된 경우)
+    if (normalized.includes(':')) {
+      const parts = normalized.split(':').map(p => p.trim()).filter(p => p.length > 0);
+      if (parts.length >= 2) {
+        // 정렬 후 조인하여 canonical form 생성
+        const sorted = [...parts].sort();
+        normalized = sorted.join(':');
+      } else {
+        // ':'만 있고 실제 파트가 없는 경우 빈 문자열 반환
+        return '';
+      }
+    }
+    
+    if (normalized.length < 2 || normalized.length > 100) {
       return '';
     }
     return normalized;
+  }
+  
+  /**
+   * 키워드가 복합키인지 판단
+   * @param keyword - 키워드
+   * @returns 복합키 여부
+   */
+  private isCompositeKeyword(keyword: string): boolean {
+    return keyword.includes(':') && keyword.split(':').length >= 2;
   }
 
   /**
