@@ -84,58 +84,25 @@ export class ArticleSearchService implements OnModuleInit {
     const requestedSize = params.size ?? 10;
     const size = Math.min(requestedSize, 50);
     const page = Math.floor(from / size) + 1;
-    const response = await this.elasticsearchService.search<ArticleSearchDocument>(
-      {
-        index: this.indexName,
-        from,
-        size,
-        query: {
-          bool: {
-            should: [
-              {
-                multi_match: {
-                  query: params.query,
-                  fields: ['title^3', 'description'],
-                  type: 'phrase_prefix',
-                  slop: 2,
-                },
-              },
-              {
-                multi_match: {
-                  query: params.query,
-                  fields: ['title^3', 'description'],
-                  type: 'bool_prefix',
-                },
-              },
-              {
-                match: {
-                  press: {
-                    query: params.query,
-                    operator: 'or',
-                  },
-                },
-              },
-              {
-                match: {
-                  category: {
-                    query: params.query,
-                    operator: 'or',
-                  },
-                },
-              },
-            ],
-            minimum_should_match: 1,
+    const response = await this.elasticsearchService.search<ArticleSearchDocument>({
+      index: this.indexName,
+      from,
+      size,
+      query: {
+        multi_match: {
+          query: params.query,
+          fields: ['title'],
+          type: 'bool_prefix',
+        },
+      },
+      sort: [
+        {
+          collectedAt: {
+            order: 'desc',
           },
         },
-        sort: [
-          {
-            collectedAt: {
-              order: 'desc',
-            },
-          },
-        ],
-      },
-    );
+      ],
+    });
     const total = typeof response.hits.total === 'number'
       ? response.hits.total
       : (response.hits.total?.value ?? 0);
