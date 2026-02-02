@@ -93,6 +93,7 @@ export class KeywordRepository {
       FROM keyword_timeseries kt
       JOIN recent_buckets rb ON rb.bucket_time = kt.bucket_time
       JOIN keywords k ON k.id = kt.keyword_id
+      WHERE k.type = 'SINGLE'
       GROUP BY k.id, k.display_text
       ORDER BY "scoreSum" DESC
       LIMIT $2;
