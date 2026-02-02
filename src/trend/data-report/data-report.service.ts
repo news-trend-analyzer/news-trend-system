@@ -5,7 +5,7 @@ import { GetRankingDto, GetTimeSeriesDto } from '../dto/report.dto';
 import { TopKeyword } from '../../common/types/top-keyword.type';
 import { TimeKeyword } from '../../common/types/time-keyword.type';
 import { Article } from '../../common/types/article.type';
-import { Keyword } from '../../common/types/keyword.type';
+import { Keyword, SearchKeyword } from '../../common/types/keyword.type';
 import { ArticleKeywordRepository } from '../../common/database/article-keyword.repository';
 
 @Injectable()
@@ -42,5 +42,9 @@ export class DataReportService {
 
   async getRelatedKeywords(keywordId: number): Promise<Keyword[]> {
     return await this.articleKeywordRepository.getRelatedKeywords(keywordId);
+  }
+
+  async searchKeyword(keyword: string, limit: number): Promise<SearchKeyword[]> {
+    return await this.keywordRepository.searchKeyword(keyword, limit);
   }
 }

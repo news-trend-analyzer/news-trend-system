@@ -6,6 +6,7 @@ import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
 import { TopKeyword } from '../types/top-keyword.type';
 import { TimeKeyword } from '../types/time-keyword.type';
+import { SearchKeyword } from '../types/keyword.type';
 /**
  * 키워드 저장소 서비스
  * Keywords, ArticleKeywords, KeywordTimeseries 테이블에 대한 저장 로직 제공
@@ -23,6 +24,29 @@ export class KeywordRepository {
     private readonly keywordTimeseriesRepository: Repository<KeywordTimeseriesEntity>,
     private readonly dataSource: DataSource,
   ) {}
+  async searchKeyword(keyword: string, limit: number): Promise<SearchKeyword[]> {
+    const query = `
+      SELECT
+        id AS "keywordId",
+        display_text AS "displayText"
+      FROM keywords
+      WHERE display_text ILIKE '%' || $1 || '%'
+      ORDER BY
+        CASE
+          WHEN display_text ILIKE $1 || '%' THEN 0
+          WHEN display_text ILIKE '%' || $1 || '%' THEN 1
+          ELSE 2
+        END,
+        LENGTH(display_text) ASC
+      LIMIT $2;
+
+    `;
+    const result = await this.dataSource.query(query, [keyword, limit]);
+    return result.map((row) => ({
+      id: row.keywordId,
+      displayText: row.displayText,
+    }));
+  }
 
   async getTimeKeywordsByKeywordId(keywordId: number, limit: number): Promise<TimeKeyword[]> {
     const query = `
@@ -52,7 +76,7 @@ export class KeywordRepository {
     const result = await this.dataSource.query(query);
     return result[0].count;
   }
-  
+
   async getRanking(recentBuckets: number, limit: number): Promise<TopKeyword[]> {
     const query = `
       WITH recent_buckets AS (

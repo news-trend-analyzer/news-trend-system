@@ -5,3 +5,8 @@ export type Keyword = {
   weightSum: number;
   associationScore: number;
 };
+
+export type SearchKeyword = {
+  id: number;
+  displayText: string;
+};

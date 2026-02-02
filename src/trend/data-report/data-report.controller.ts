@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { DataReportService } from '../data-report/data-report.service';
-import { GetRankingDto, GetTimeSeriesDto, GetRelatedArticlesDto, GetRelatedKeywordsDto } from '../dto/report.dto';
+import { GetRankingDto, GetTimeSeriesDto, GetRelatedArticlesDto, GetRelatedKeywordsDto, SearchKeywordDto } from '../dto/report.dto';
 
 @Controller('data-report')
 export class DataReportController {
@@ -38,6 +38,11 @@ export class DataReportController {
   @Get('related-keywords')
   async getRelatedKeywords(@Query() dto: GetRelatedKeywordsDto) {
     return this.dataReportService.getRelatedKeywords(dto.keywordId);
+  }
+
+  @Get('search-keyword')
+  async searchKeyword(@Query() dto: SearchKeywordDto) {
+    return this.dataReportService.searchKeyword(dto.keyword, dto.limit);
   }
 }
 

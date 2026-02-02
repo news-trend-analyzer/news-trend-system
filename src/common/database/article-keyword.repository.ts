@@ -25,7 +25,7 @@ export class ArticleKeywordRepository {
     FROM article_keywords ak
     JOIN articles a ON a.id = ak.article_id
     WHERE ak.keyword_id = $1
-      AND a.published_at >= NOW() - INTERVAL '10 hours'
+      AND a.published_at >= NOW() - INTERVAL '24 hours'
     ORDER BY ak.weight DESC, a.published_at DESC
     LIMIT 5;
     `;
@@ -48,7 +48,7 @@ export class ArticleKeywordRepository {
       FROM article_keywords ak
       JOIN articles a ON a.id = ak.article_id
       WHERE ak.keyword_id = $1
-        AND a.published_at >= NOW() - INTERVAL '10 hours'
+        AND a.published_at >= NOW() - INTERVAL '24 hours'
     )
     SELECT
       k2.id AS related_keyword_id,

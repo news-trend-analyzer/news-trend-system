@@ -1,4 +1,4 @@
-import { IsInt, IsNotEmpty, IsOptional, Max, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, Max, Min, IsString } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class GetRankingDto {
@@ -7,7 +7,7 @@ export class GetRankingDto {
   @IsInt()
   @Min(1)
   @Max(200)
-  recentBuckets?: number = 12;
+  recentBuckets?: number = 20;
 
   @IsOptional()
   @Type(() => Number)
@@ -40,4 +40,17 @@ export class GetRelatedKeywordsDto {
   @IsNotEmpty()
   @IsInt()
   keywordId: number;
+}
+
+export class SearchKeywordDto {
+  @IsNotEmpty()
+  @IsString({ message: 'keyword는 문자열이어야 합니다.' })
+  keyword: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 10;
 }
