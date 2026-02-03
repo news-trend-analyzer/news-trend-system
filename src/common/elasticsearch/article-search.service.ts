@@ -84,15 +84,33 @@ export class ArticleSearchService implements OnModuleInit {
     const requestedSize = params.size ?? 10;
     const size = Math.min(requestedSize, 50);
     const page = Math.floor(from / size) + 1;
+    const normalizedQuery = this.normalizeSearchQuery(params.query);
     const response = await this.elasticsearchService.search<ArticleSearchDocument>({
       index: this.indexName,
       from,
       size,
       query: {
-        multi_match: {
-          query: params.query,
-          fields: ['title'],
-          type: 'bool_prefix',
+        bool: {
+          should: [
+            {
+              match: {
+                title: {
+                  query: normalizedQuery,
+                  operator: 'and',
+                  boost: 2.0,
+                },
+              },
+            },
+            {
+              match: {
+                title: {
+                  query: normalizedQuery,
+                  operator: 'or',
+                },
+              },
+            },
+          ],
+          minimum_should_match: 1,
         },
       },
       sort: [
@@ -264,6 +282,19 @@ export class ArticleSearchService implements OnModuleInit {
       pubDate: article.pubDate,
       collectedAt: article.collectedAt,
     };
+  }
+
+  /**
+   * 검색어 정규화
+   * 콜론(:), 쉼표(,) 등 특수문자를 공백으로 치환하여 검색 정확도 향상
+   * @param query 원본 검색어
+   * @returns 정규화된 검색어
+   */
+  private normalizeSearchQuery(query: string): string {
+    return query
+      .replace(/[:,\/\\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 }
 
