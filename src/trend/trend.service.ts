@@ -439,7 +439,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       return {
         id: k.id,
         rank: currentRank,
-        keyword: k.displayText,
+        keyword: k.normalizedText,
         type: k.type,
         status,
         rankChange: Math.abs(rankChange),
@@ -483,7 +483,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     // 1단계: Composite 키워드 먼저 채우기 (이슈 중심, 중복 제거)
     for (const row of rows) {
       if (row.type === 'COMPOSITE') {
-        const compositeSingles = row.displayText.split(':');
+        const compositeSingles = row.normalizedText.split(':');
         
         // 이미 사용된 Single 키워드가 포함되어 있는지 확인
         const hasOverlap = compositeSingles.some((s) => usedSingles.has(s));
@@ -510,7 +510,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
         break;
       }
       
-      if (row.type === 'SINGLE' && !blockedSingles.has(row.displayText)) {
+      if (row.type === 'SINGLE' && !blockedSingles.has(row.normalizedText)) {
         result.push(row);
       }
     }
