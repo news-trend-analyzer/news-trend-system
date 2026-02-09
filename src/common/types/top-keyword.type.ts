@@ -1,13 +1,13 @@
 export type TopKeyword = {
   id: number;
-  displayText: string;
+  normalizedText: string;
   freqSum: number;
   scoreSum: number;
 };
 
 export type RankedKeyword = {
   id: number;
-  displayText: string;
+  normalizedText: string;
   type: 'SINGLE' | 'COMPOSITE' | null;
   score24h: number;
   scoreRecent: number;

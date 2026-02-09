@@ -28,23 +28,23 @@ export class KeywordRepository {
     const query = `
       SELECT
         id AS "keywordId",
-        display_text AS "displayText"
+        normalized_text AS "normalizedText"
       FROM keywords
-      WHERE display_text ILIKE '%' || $1 || '%'
+      WHERE normalized_text ILIKE '%' || $1 || '%'
       ORDER BY
         CASE
-          WHEN display_text ILIKE $1 || '%' THEN 0
-          WHEN display_text ILIKE '%' || $1 || '%' THEN 1
+          WHEN normalized_text ILIKE $1 || '%' THEN 0
+          WHEN normalized_text ILIKE '%' || $1 || '%' THEN 1
           ELSE 2
         END,
-        LENGTH(display_text) ASC
+        LENGTH(normalized_text) ASC
       LIMIT $2;
 
     `;
     const result = await this.dataSource.query(query, [keyword, limit]);
     return result.map((row) => ({
       id: row.keywordId,
-      displayText: row.displayText,
+      normalizedText: row.normalizedText,
     }));
   }
 
@@ -87,14 +87,14 @@ export class KeywordRepository {
       )
       SELECT
         k.id AS "id",
-        k.display_text AS "displayText",
+        k.normalized_text AS "normalizedText",
         SUM(kt.freq)::bigint AS "freqSum",
         SUM(kt.score_sum)::float8 AS "scoreSum"
       FROM keyword_timeseries kt
       JOIN recent_buckets rb ON rb.bucket_time = kt.bucket_time
       JOIN keywords k ON k.id = kt.keyword_id
       WHERE k.type = 'SINGLE'
-      GROUP BY k.id, k.display_text
+      GROUP BY k.id, k.normalized_text
       ORDER BY "scoreSum" DESC
       LIMIT $2;
     `;
@@ -102,7 +102,7 @@ export class KeywordRepository {
     const result = await this.dataSource.query(query, [recentBuckets, limit]);
     return result.map((row) => ({
       id: row.id,
-      displayText: row.displayText,
+      normalizedText: row.normalizedText,
       freqSum: row.freqSum,
       scoreSum: row.scoreSum,
     }));
@@ -142,7 +142,7 @@ export class KeywordRepository {
       )
       SELECT
         k.id AS "id",
-        k.display_text AS "displayText",
+        k.normalized_text AS "normalizedText",
         k.type AS "type",
         COALESCE(s24.score_24h, 0) AS "score24h",
         COALESCE(sr.score_recent, 0) AS "scoreRecent",
@@ -163,7 +163,7 @@ export class KeywordRepository {
     const result = await this.dataSource.query(query, [candidateLimit]);
     return result.map((row) => ({
       id: row.id,
-      displayText: row.displayText,
+      normalizedText: row.normalizedText,
       type: row.type as 'SINGLE' | 'COMPOSITE' | null,
       score24h: Number.parseFloat(row.score24h),
       scoreRecent: Number.parseFloat(row.scoreRecent),

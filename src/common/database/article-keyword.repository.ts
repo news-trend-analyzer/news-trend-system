@@ -52,7 +52,7 @@ export class ArticleKeywordRepository {
     )
     SELECT
       k2.id AS related_keyword_id,
-      k2.display_text,
+      k2.normalized_text,
       COUNT(*) AS co_count,
       SUM(ak2.weight) AS weight_sum,
       (SUM(ak2.weight) * LN(COUNT(*) + 1)) AS association_score
@@ -60,13 +60,13 @@ export class ArticleKeywordRepository {
     JOIN article_keywords ak2 ON ak2.article_id = ta.article_id
     JOIN keywords k2 ON k2.id = ak2.keyword_id
     WHERE ak2.keyword_id <> $1
-    GROUP BY k2.id, k2.display_text
+    GROUP BY k2.id, k2.normalized_text
     ORDER BY association_score DESC;
     `;
     const result = await this.dataSource.query(query, [keywordId]);
     return result.map((row) => ({
       id: row.related_keyword_id,
-      displayText: row.display_text,
+      normalizedText: row.normalized_text,
       coCount: row.co_count,
       weightSum: row.weight_sum,
       associationScore: row.association_score,

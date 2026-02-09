@@ -1,6 +1,6 @@
 export type Keyword = {
   id: number;
-  displayText: string;
+  normalizedText: string;
   coCount: number;
   weightSum: number;
   associationScore: number;
@@ -8,5 +8,5 @@ export type Keyword = {
 
 export type SearchKeyword = {
   id: number;
-  displayText: string;
+  normalizedText: string;
 };
