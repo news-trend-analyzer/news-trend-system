@@ -109,55 +109,65 @@ export class KeywordRepository {
   }
 
   /**
-   * 최근 24시간 기준 상위 키워드 조회 (Single + Composite 포함)
+   * 최근 24시간 기준 상위 키워드 조회 (Composite 포함)
    * @param candidateLimit - 후보 키워드 개수 (필터링 전)
    * @returns 랭킹 후보 키워드 배열
    */
   async findTopKeywords24h(candidateLimit: number = 50): Promise<RankedKeyword[]> {
     const query = `
-      WITH score_24h AS (
-        SELECT
-          kt.keyword_id,
-          SUM(kt.score_sum)::float8 AS score_24h
-        FROM keyword_timeseries kt
-        WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'
-        GROUP BY kt.keyword_id
-      ),
-      score_recent AS (
-        SELECT
-          kt.keyword_id,
-          SUM(kt.score_sum)::float8 AS score_recent
-        FROM keyword_timeseries kt
-        WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
-        GROUP BY kt.keyword_id
-      ),
-      score_prev AS (
-        SELECT
-          kt.keyword_id,
-          SUM(kt.score_sum)::float8 AS score_prev
-        FROM keyword_timeseries kt
-        WHERE kt.bucket_time < (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
-          AND kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '2 hours'
-        GROUP BY kt.keyword_id
-      )
-      SELECT
-        k.id AS "id",
-        k.normalized_text AS "normalizedText",
-        k.type AS "type",
-        COALESCE(s24.score_24h, 0) AS "score24h",
-        COALESCE(sr.score_recent, 0) AS "scoreRecent",
-        COALESCE(sp.score_prev, 0) AS "scorePrev",
-        (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) AS "diffScore",
-        (
-          COALESCE(s24.score_24h, 0)
-          + GREATEST(COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0), 0) * 0.5
-        ) AS "finalScore"
-      FROM keywords k
-      JOIN score_24h s24 ON s24.keyword_id = k.id
-      LEFT JOIN score_recent sr ON sr.keyword_id = k.id
-      LEFT JOIN score_prev sp ON sp.keyword_id = k.id
-      ORDER BY "finalScore" DESC
-      LIMIT $1;
+  WITH score_24h AS (
+    SELECT
+      kt.keyword_id,
+      SUM(kt.score_sum)::float8 AS score_24h
+    FROM keyword_timeseries kt
+    WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'
+    GROUP BY kt.keyword_id
+  ),
+  score_recent AS (
+    SELECT
+      kt.keyword_id,
+      SUM(kt.score_sum)::float8 AS score_recent
+    FROM keyword_timeseries kt
+    WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
+    GROUP BY kt.keyword_id
+  ),
+  score_prev AS (
+    SELECT
+      kt.keyword_id,
+      SUM(kt.score_sum)::float8 AS score_prev
+    FROM keyword_timeseries kt
+    WHERE kt.bucket_time < (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
+      AND kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '2 hours'
+    GROUP BY kt.keyword_id
+  )
+  SELECT
+    k.id AS "id",
+    k.normalized_text AS "normalizedText",
+    k.display_text AS "displayText",
+    k.type AS "type",
+    k.created_at AS "createdAt",
+    COALESCE(s24.score_24h, 0) AS "score24h",
+    COALESCE(sr.score_recent, 0) AS "scoreRecent",
+    COALESCE(sp.score_prev, 0) AS "scorePrev",
+    (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) AS "diffScore",
+    (
+      COALESCE(s24.score_24h, 0) * 0.4
+      + COALESCE(sr.score_recent, 0) * 0.4
+      + LEAST(
+          (COALESCE(sr.score_recent, 0) / (COALESCE(sp.score_prev, 0) + 1)) * 20,
+          100
+        )
+      + (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) * 0.2
+    ) AS "finalScore"
+  FROM keywords k
+  JOIN score_24h s24 ON s24.keyword_id = k.id
+  LEFT JOIN score_recent sr ON sr.keyword_id = k.id
+  LEFT JOIN score_prev sp ON sp.keyword_id = k.id
+  WHERE k.type = 'COMPOSITE'
+  ORDER BY
+    CASE WHEN COALESCE(sr.score_recent, 0) = 0 THEN 1 ELSE 0 END,
+    "finalScore" DESC
+  LIMIT $1;
     `;
 
     const result = await this.dataSource.query(query, [candidateLimit]);

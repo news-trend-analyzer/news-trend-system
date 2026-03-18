@@ -10,7 +10,6 @@ import { Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { ScrapedArticle } from '../collector/models/article.model';
 import { KeywordRepository } from '../common/database/keyword.repository';
-import { RankedKeyword } from '../common/types/top-keyword.type';
 
 type KeywordScore = Readonly<{ keyword: string; score: number }>;
 
@@ -407,8 +406,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 상위 트렌드 조회 (DB 기반, 24시간 기준)
-   * Composite 우선 랭킹: 이슈(Composite)를 먼저 보여주고, 부족한 자리만 Single로 채움
-   * Composite에 포함된 Single 키워드는 중복 제거
+   * Composite 키워드를 점수 순으로 조회하여 그대로 반환
    */
   async getTopTrends(limit: number = 10): Promise<any[]> {
     // 1) 캐시된 랭킹이 있으면 그대로 반환 (등락 정보 포함)
@@ -438,15 +436,11 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 3) DB에서 후보 키워드 조회 (필터링 전 넉넉히)
-    const candidateLimit = Math.max(limit * 5, 50);
-    const candidates = await this.keywordRepository.findTopKeywords24h(candidateLimit);
+    // 3) DB에서 Composite 키워드 조회
+    const candidates = await this.keywordRepository.findTopKeywords24h(limit);
 
-    // 4) 서비스 레벨 필터링 (Composite 우선, Single 중복 제거)
-    const filtered = this.buildTopTrends(candidates, limit);
-
-    // 5) 결과 포맷팅 + 등락 계산
-    const trends = filtered.map((k, idx) => {
+    // 4) 결과 포맷팅 + 등락 계산
+    const trends = candidates.map((k, idx) => {
       const currentRank = idx + 1;
       const prevRank = prevRankMap.get(k.id) ?? null;
 
@@ -488,62 +482,6 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     ]);
 
     return trends;
-  }
-
-  /**
-   * Composite 우선 랭킹 필터링 로직
-   * 1. Composite 키워드를 먼저 채움 (이슈 중심)
-   * 2. Composite 간에도 공통 Single 키워드가 있으면 중복 제거 (높은 점수 우선)
-   * 3. Composite에 포함된 Single 키워드는 차단
-   * 4. 부족한 자리만 Single 키워드로 채움
-   * @param rows - 랭킹 후보 키워드 배열 (점수 순으로 정렬됨)
-   * @param limit - 최종 반환할 키워드 개수
-   * @returns 필터링된 키워드 배열 (Composite 우선)
-   */
-  private buildTopTrends(
-    rows: RankedKeyword[],
-    limit: number,
-  ): RankedKeyword[] {
-    const result: RankedKeyword[] = [];
-    const blockedSingles = new Set<string>();
-    const usedSingles = new Set<string>(); // Composite 간 중복 체크용
-
-    // 1단계: Composite 키워드 먼저 채우기 (이슈 중심, 중복 제거)
-    for (const row of rows) {
-      if (row.type === 'COMPOSITE') {
-        const compositeSingles = row.normalizedText.split(':');
-        
-        // 이미 사용된 Single 키워드가 포함되어 있는지 확인
-        const hasOverlap = compositeSingles.some((s) => usedSingles.has(s));
-        
-        if (!hasOverlap) {
-          result.push(row);
-          // Composite 구성 Single을 차단 목록에 추가
-          compositeSingles.forEach((k) => {
-            blockedSingles.add(k);
-            usedSingles.add(k);
-          });
-          
-          if (result.length >= limit) {
-            return result;
-          }
-        }
-        // hasOverlap이 true면 이 Composite는 건너뜀 (이미 더 높은 점수의 Composite가 있음)
-      }
-    }
-
-    // 2단계: 부족한 자리만 Single 키워드로 채우기
-    for (const row of rows) {
-      if (result.length >= limit) {
-        break;
-      }
-      
-      if (row.type === 'SINGLE' && !blockedSingles.has(row.normalizedText)) {
-        result.push(row);
-      }
-    }
-
-    return result;
   }
 
   /**
