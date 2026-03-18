@@ -34,6 +34,15 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   private readonly pendingKeywordSaves: PendingKeywordSave[] = [];
   private isFlushingKeywordSaves = false;
   private keywordFlushIntervalId: NodeJS.Timeout | null = null;
+  /** Composite 키워드 boost를 줄일 카테고리 (예: 연예·스포츠 등) */
+  private readonly COMPOSITE_BOOST_REDUCED_CATEGORIES = new Set([
+    'entertainment',
+    'entertainments',
+    'culture',
+    'culture-life',
+    'sports',
+  ]);
+
   private readonly STOP_WORDS = [
     '기자', '보도', '관련', '이번', '대한', '통해', '에서',
     '으로', '했다', '한다', '있는', '그리고', '하지만',
@@ -157,9 +166,10 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * 기사 데이터를 분석하여 트렌드 키워드 추출
+   * 카테고리에 따라 Composite 키워드 boost를 조정 (연예·스포츠 등은 boost 감소)
    */
   private analyzeTrend(data: ScrapedArticle) {
-    const { title, contentBody } = data;
+    const { title, contentBody, category } = data;
     const newResult = this.analyzeTrendNew({
       title,
       content_body: contentBody,
@@ -169,12 +179,13 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       keyword,
       score: newResult.score - index,
     }));
-    // Composite keyword 추가 (점수 boost 적용)
+    // Composite keyword 추가 (카테고리별 boost 적용)
     const allKeywords = [...singleKeywords];
     if (newResult.compositeKey && newResult.compositeKey.length > 0) {
+      const compositeBoost = this.getCompositeBoost(category);
       allKeywords.push({
         keyword: newResult.compositeKey,
-        score: newResult.score + 5, // Composite keyword에 boost
+        score: newResult.score + compositeBoost,
       });
     }
     return {
@@ -184,6 +195,23 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       compositeKey: newResult.compositeKey,
       score: newResult.score,
     };
+  }
+
+  /**
+   * 카테고리별 Composite 키워드 boost 반환
+   * @param category - 기사 카테고리 (예: politics, entertainment, sports)
+   * @returns boost 점수 (기본 5, 감소 카테고리는 2)
+   */
+  private getCompositeBoost(category?: string): number {
+    const defaultBoost = 5;
+    const reducedBoost = 2;
+    if (!category) {
+      return defaultBoost;
+    }
+    const normalized = category.toLowerCase().trim();
+    return this.COMPOSITE_BOOST_REDUCED_CATEGORIES.has(normalized)
+      ? reducedBoost
+      : defaultBoost;
   }
 
   /**
