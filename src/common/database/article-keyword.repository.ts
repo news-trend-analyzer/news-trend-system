@@ -62,6 +62,7 @@ export class ArticleKeywordRepository {
     WHERE ak2.keyword_id <> $1
     GROUP BY k2.id, k2.normalized_text
     ORDER BY association_score DESC;
+    LIMIT 10;
     `;
     const result = await this.dataSource.query(query, [keywordId]);
     return result.map((row) => ({
