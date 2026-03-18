@@ -41,7 +41,7 @@ export class DataReportService {
   }
 
   async getRelatedKeywords(keywordId: number): Promise<Keyword[]> {
-    return await this.articleKeywordRepository.getRelatedKeywords(keywordId);
+    return await this.articleKeywordRepository.getRelatedKeywords(keywordId, 10);
   }
 
   async searchKeyword(keyword: string, limit: number): Promise<SearchKeyword[]> {

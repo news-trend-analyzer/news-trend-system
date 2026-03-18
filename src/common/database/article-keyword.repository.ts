@@ -41,7 +41,7 @@ export class ArticleKeywordRepository {
     }));
   }
 
-  async getRelatedKeywords(keywordId: number): Promise<Keyword[]> {
+  async getRelatedKeywords(keywordId: number, limit: number): Promise<Keyword[]> {
     const query = `
     WITH target_articles AS (
       SELECT ak.article_id
@@ -61,10 +61,10 @@ export class ArticleKeywordRepository {
     JOIN keywords k2 ON k2.id = ak2.keyword_id
     WHERE ak2.keyword_id <> $1
     GROUP BY k2.id, k2.normalized_text
-    ORDER BY association_score DESC;
-    LIMIT 10;
+    ORDER BY association_score DESC
+    LIMIT $2;
     `;
-    const result = await this.dataSource.query(query, [keywordId]);
+    const result = await this.dataSource.query(query, [keywordId, limit]);
     return result.map((row) => ({
       id: row.related_keyword_id,
       normalizedText: row.normalized_text,
