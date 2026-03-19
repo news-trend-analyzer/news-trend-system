@@ -203,7 +203,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
    */
   private getCompositeBoost(category?: string): number {
     const defaultBoost = 5;
-    const reducedBoost = 2;
+    const reducedBoost = 0;
     if (!category) {
       return defaultBoost;
     }
