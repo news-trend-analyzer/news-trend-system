@@ -65,6 +65,8 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   private readonly PREVIOUS_RESULT_KEY = 'trend:top:previous';
   /** 스냅샷 갱신 간격 (초). 등락 비교 기준점으로 이 간격마다만 갱신 */
   private readonly SNAPSHOT_INTERVAL_SECONDS = 600;
+  /** 등락 비교용 후보 개수. top N보다 넓게 저장해 15위→9위 같은 상승을 new로 오판하지 않음 */
+  private readonly SNAPSHOT_CANDIDATE_LIMIT = 20;
   
   // Redis Keys (getKeywordTrend에서 사용 중 - 향후 DB 기반으로 재구현 필요)
   private readonly KEYWORD_SCORE_PREFIX = 'trend:score:';
@@ -444,8 +446,10 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 3) DB에서 Composite 키워드 조회
-    const candidates = await this.keywordRepository.findTopKeywords24h(limit);
+    // 3) DB에서 Composite 키워드 조회 (top N보다 넓게 조회해 등락 비교 정확도 향상)
+    const candidates = await this.keywordRepository.findTopKeywords24h(
+      this.SNAPSHOT_CANDIDATE_LIMIT,
+    );
 
     // 4) 결과 포맷팅 + 등락 계산
     const trends = candidates.map((k, idx) => {
@@ -505,7 +509,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       await this.redis.set(this.PREVIOUS_RESULT_KEY, trendsJson);
     }
 
-    return trends;
+    return trends.slice(0, limit);
   }
 
   /**
