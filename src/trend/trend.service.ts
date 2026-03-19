@@ -57,11 +57,14 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   
   // Redis 캐시 키
   private readonly CACHE_TOP_TRENDS_KEY = 'trend:cache:top:24h';
-  private readonly CACHE_TTL_SECONDS = 60;
+  /** API 응답 캐시 TTL. 프론트 요청 시 이 간격마다 최신화 */
+  private readonly CACHE_TTL_SECONDS = 30;
   private readonly LAST_TOP_TRENDS_KEY = 'trend:top:last';
   private readonly LAST_TOP_TRENDS_UPDATED_KEY = 'trend:top:last:updated';
-  /** 스냅샷 갱신 간격 (초). 이 간격마다만 스냅샷을 덮어써서 등락 비교 기준을 유지 */
-  private readonly SNAPSHOT_INTERVAL_SECONDS = 300;
+  /** 이전 계산 결과. 스냅샷 갱신 시 current 대신 previous를 저장해 "시간 차 기반 등락" 명확화 */
+  private readonly PREVIOUS_RESULT_KEY = 'trend:top:previous';
+  /** 스냅샷 갱신 간격 (초). 등락 비교 기준점으로 이 간격마다만 갱신 */
+  private readonly SNAPSHOT_INTERVAL_SECONDS = 600;
   
   // Redis Keys (getKeywordTrend에서 사용 중 - 향후 DB 기반으로 재구현 필요)
   private readonly KEYWORD_SCORE_PREFIX = 'trend:score:';
@@ -484,17 +487,22 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     // 5) 캐시 저장 (항상)
     await this.redis.setex(cacheKey, this.CACHE_TTL_SECONDS, trendsJson);
 
-    // 6) 스냅샷은 SNAPSHOT_INTERVAL_SECONDS마다만 갱신 (등락 비교 기준 유지)
+    // 6) 스냅샷 갱신: current가 아닌 previous를 저장해 "이전 시점 기준" 등락 비교
     const nowSec = Math.floor(Date.now() / 1000);
     const lastUpdated = await this.redis.get(this.LAST_TOP_TRENDS_UPDATED_KEY);
     const shouldUpdateSnapshot =
       !lastUpdated ||
       nowSec - Number.parseInt(lastUpdated, 10) >= this.SNAPSHOT_INTERVAL_SECONDS;
+    const previousResultJson = await this.redis.get(this.PREVIOUS_RESULT_KEY);
     if (shouldUpdateSnapshot) {
+      const snapshotValue = previousResultJson ?? trendsJson;
       await Promise.all([
-        this.redis.set(this.LAST_TOP_TRENDS_KEY, trendsJson),
+        this.redis.set(this.LAST_TOP_TRENDS_KEY, snapshotValue),
         this.redis.set(this.LAST_TOP_TRENDS_UPDATED_KEY, nowSec.toString()),
+        this.redis.set(this.PREVIOUS_RESULT_KEY, trendsJson),
       ]);
+    } else {
+      await this.redis.set(this.PREVIOUS_RESULT_KEY, trendsJson);
     }
 
     return trends;
