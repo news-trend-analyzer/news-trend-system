@@ -172,7 +172,7 @@ export class KeywordRepository {
 
     const result = await this.dataSource.query(query, [candidateLimit]);
     return result.map((row) => ({
-      id: row.id,
+      id: Number(row.id),
       normalizedText: row.normalizedText,
       type: row.type as 'SINGLE' | 'COMPOSITE' | null,
       score24h: Number.parseFloat(row.score24h),

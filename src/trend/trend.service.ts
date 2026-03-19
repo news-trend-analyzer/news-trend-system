@@ -202,8 +202,8 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
    * @returns boost 점수 (기본 5, 감소 카테고리는 2)
    */
   private getCompositeBoost(category?: string): number {
-    const defaultBoost = 5;
-    const reducedBoost = 0;
+    const defaultBoost = 10;
+    const reducedBoost = 5;
     if (!category) {
       return defaultBoost;
     }
@@ -422,10 +422,12 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     const prevRankMap = new Map<number, number>();
     if (lastSnapshotJson) {
       try {
-        const lastSnapshot = JSON.parse(lastSnapshotJson) as Array<{ id: number; rank: number }>;
+        const lastSnapshot = JSON.parse(lastSnapshotJson) as Array<{ id: number | string; rank: number }>;
         lastSnapshot.forEach((item) => {
-          if (typeof item.id === 'number' && typeof item.rank === 'number') {
-            prevRankMap.set(item.id, item.rank);
+          const id = Number(item.id);
+          const rank = Number(item.rank);
+          if (!Number.isNaN(id) && !Number.isNaN(rank)) {
+            prevRankMap.set(id, rank);
           }
         });
       } catch (err) {
@@ -442,7 +444,8 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     // 4) 결과 포맷팅 + 등락 계산
     const trends = candidates.map((k, idx) => {
       const currentRank = idx + 1;
-      const prevRank = prevRankMap.get(k.id) ?? null;
+      const keywordId = Number(k.id);
+      const prevRank = prevRankMap.get(keywordId) ?? null;
 
       let status: 'up' | 'down' | 'same' | 'new' = 'new';
       let rankChange = 0;
@@ -459,7 +462,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       }
 
       return {
-        id: k.id,
+        id: keywordId,
         rank: currentRank,
         keyword: k.normalizedText,
         type: k.type,
