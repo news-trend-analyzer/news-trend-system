@@ -59,6 +59,9 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   private readonly CACHE_TOP_TRENDS_KEY = 'trend:cache:top:24h';
   private readonly CACHE_TTL_SECONDS = 60;
   private readonly LAST_TOP_TRENDS_KEY = 'trend:top:last';
+  private readonly LAST_TOP_TRENDS_UPDATED_KEY = 'trend:top:last:updated';
+  /** 스냅샷 갱신 간격 (초). 이 간격마다만 스냅샷을 덮어써서 등락 비교 기준을 유지 */
+  private readonly SNAPSHOT_INTERVAL_SECONDS = 300;
   
   // Redis Keys (getKeywordTrend에서 사용 중 - 향후 DB 기반으로 재구현 필요)
   private readonly KEYWORD_SCORE_PREFIX = 'trend:score:';
@@ -478,11 +481,21 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
 
     const trendsJson = JSON.stringify(trends);
 
-    // 6) Redis 캐시 및 스냅샷 저장
-    await Promise.all([
-      this.redis.setex(cacheKey, this.CACHE_TTL_SECONDS, trendsJson),
-      this.redis.set(this.LAST_TOP_TRENDS_KEY, trendsJson),
-    ]);
+    // 5) 캐시 저장 (항상)
+    await this.redis.setex(cacheKey, this.CACHE_TTL_SECONDS, trendsJson);
+
+    // 6) 스냅샷은 SNAPSHOT_INTERVAL_SECONDS마다만 갱신 (등락 비교 기준 유지)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const lastUpdated = await this.redis.get(this.LAST_TOP_TRENDS_UPDATED_KEY);
+    const shouldUpdateSnapshot =
+      !lastUpdated ||
+      nowSec - Number.parseInt(lastUpdated, 10) >= this.SNAPSHOT_INTERVAL_SECONDS;
+    if (shouldUpdateSnapshot) {
+      await Promise.all([
+        this.redis.set(this.LAST_TOP_TRENDS_KEY, trendsJson),
+        this.redis.set(this.LAST_TOP_TRENDS_UPDATED_KEY, nowSec.toString()),
+      ]);
+    }
 
     return trends;
   }
