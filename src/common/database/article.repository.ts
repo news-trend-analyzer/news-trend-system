@@ -89,6 +89,7 @@ export class ArticleRepository {
     url: string;
     title: string;
     bodyText: string;
+    category?: string | null;
     publishedAt: Date;
     collectedAt: Date;
     checksumHash?: string | null;
@@ -104,25 +105,28 @@ export class ArticleRepository {
       const urls = articles.map((a) => a.url);
       const titles = articles.map((a) => a.title);
       const bodyTexts = articles.map((a) => a.bodyText);
+      const categories = articles.map((a) => a.category ?? null);
       const publishedAts = articles.map((a) => a.publishedAt);
       const collectedAts = articles.map((a) => a.collectedAt);
       const checksumHashes = articles.map((a) => a.checksumHash || null);
       const query = `
-        INSERT INTO articles (publisher, url, title, body_text, published_at, collected_at, checksum_hash)
+        INSERT INTO articles (publisher, url, title, body_text, category, published_at, collected_at, checksum_hash)
         SELECT * FROM UNNEST(
           $1::VARCHAR(50)[],
           $2::TEXT[],
           $3::TEXT[],
           $4::TEXT[],
-          $5::TIMESTAMPTZ[],
+          $5::VARCHAR(50)[],
           $6::TIMESTAMPTZ[],
-          $7::TEXT[]
-        ) AS t(publisher, url, title, body_text, published_at, collected_at, checksum_hash)
+          $7::TIMESTAMPTZ[],
+          $8::TEXT[]
+        ) AS t(publisher, url, title, body_text, category, published_at, collected_at, checksum_hash)
         ON CONFLICT (url)
         DO UPDATE SET
           publisher = EXCLUDED.publisher,
           title = EXCLUDED.title,
           body_text = EXCLUDED.body_text,
+          category = EXCLUDED.category,
           published_at = EXCLUDED.published_at,
           collected_at = EXCLUDED.collected_at,
           checksum_hash = EXCLUDED.checksum_hash
@@ -133,6 +137,7 @@ export class ArticleRepository {
         urls,
         titles,
         bodyTexts,
+        categories,
         publishedAts,
         collectedAts,
         checksumHashes,

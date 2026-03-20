@@ -28,6 +28,9 @@ export class ArticleEntity {
   @Column({ type: 'text', name: 'body_text' })
   bodyText: string;
 
+  @Column({ type: 'varchar', length: 50, name: 'category', nullable: true })
+  category: string | null;
+
   @Column({ type: 'timestamptz', name: 'published_at' })
   publishedAt: Date;
 

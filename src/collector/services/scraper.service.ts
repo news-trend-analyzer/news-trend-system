@@ -120,6 +120,7 @@ export class ScraperService {
       url: string;
       title: string;
       bodyText: string;
+      category: string | null;
       publishedAt: Date;
       collectedAt: Date;
       checksumHash: string | null;
@@ -163,6 +164,7 @@ export class ScraperService {
             url: scraped.link,
             title: scraped.title,
             bodyText: scraped.contentBody,
+            category: scraped.category ?? null,
             publishedAt,
             collectedAt: new Date(scraped.crawledAt),
             checksumHash: null,
@@ -193,6 +195,7 @@ export class ScraperService {
       url: string;
       title: string;
       bodyText: string;
+      category: string | null;
       publishedAt: Date;
       collectedAt: Date;
       checksumHash: string | null;

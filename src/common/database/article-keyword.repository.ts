@@ -11,6 +11,7 @@ export type ArticleByKeywordItem = {
   readonly title: string;
   readonly description: string | null;
   readonly publisher: string;
+  readonly category: string | null;
   readonly url: string;
   readonly publishedAt: Date;
   readonly weight: number;
@@ -99,6 +100,7 @@ export class ArticleKeywordRepository {
       a.title,
       a.body_text,
       a.publisher,
+      a.category,
       a.url,
       a.published_at,
       ak.weight
@@ -120,6 +122,7 @@ export class ArticleKeywordRepository {
       title: row.title,
       description: this.truncateToDescription(row.body_text),
       publisher: row.publisher,
+      category: row.category ?? null,
       url: row.url,
       publishedAt: row.published_at,
       weight: row.weight,
