@@ -5,10 +5,11 @@ import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { Article } from '../types/article.type';
 import { Keyword } from '../types/keyword.type';
 
+const DESCRIPTION_MAX_LENGTH = 200;
+
 export type ArticleByKeywordItem = {
-  readonly id: number;
   readonly title: string;
-  readonly bodyText: string;
+  readonly description: string | null;
   readonly publisher: string;
   readonly url: string;
   readonly publishedAt: Date;
@@ -95,7 +96,6 @@ export class ArticleKeywordRepository {
     const totalPages = Math.ceil(total / size);
     const dataQuery = `
     SELECT
-      a.id,
       a.title,
       a.body_text,
       a.publisher,
@@ -117,9 +117,8 @@ export class ArticleKeywordRepository {
       from,
     ]);
     const items: ArticleByKeywordItem[] = rows.map((row) => ({
-      id: row.id,
       title: row.title,
-      bodyText: row.body_text,
+      description: this.truncateToDescription(row.body_text),
       publisher: row.publisher,
       url: row.url,
       publishedAt: row.published_at,
@@ -134,6 +133,17 @@ export class ArticleKeywordRepository {
       hasNext: page < totalPages,
       hasPrev: page > 1,
     };
+  }
+
+  private truncateToDescription(bodyText: string | null): string | null {
+    if (!bodyText || bodyText.trim().length === 0) {
+      return null;
+    }
+    const trimmed = bodyText.trim();
+    if (trimmed.length <= DESCRIPTION_MAX_LENGTH) {
+      return trimmed;
+    }
+    return `${trimmed.slice(0, DESCRIPTION_MAX_LENGTH)}...`;
   }
 
   async getRelatedKeywords(keywordId: number, limit: number): Promise<Keyword[]> {
