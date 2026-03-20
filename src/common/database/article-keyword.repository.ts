@@ -72,6 +72,7 @@ export class ArticleKeywordRepository {
 
   /**
    * 키워드(normalized_text 또는 display_text)로 기사 검색
+   * - 복합 키워드(BTS:공연) 시 : 기준 분리하여 1순위 정확 매칭, 2순위 단일 키워드 관련성 매칭
    * @param params 검색 파라미터
    */
   async searchArticlesByKeyword(
@@ -81,6 +82,42 @@ export class ArticleKeywordRepository {
     const size = Math.min(Math.max(params.size ?? 20, 1), 50);
     const page = Math.max(params.page ?? 1, 1);
     const from = (page - 1) * size;
+    const keyword = params.keyword.trim();
+    const parts = this.splitKeywordParts(keyword);
+    const hasComposite = parts.length >= 2;
+    if (!hasComposite) {
+      return this.searchArticlesExactOnly(keyword, hoursInterval, size, page, from);
+    }
+    return this.searchArticlesWithPartialMatch(
+      keyword,
+      parts,
+      hoursInterval,
+      size,
+      page,
+      from,
+    );
+  }
+
+  /**
+   * 키워드를 : 기준으로 분리 (예: BTS:공연 → ['BTS', '공연'])
+   */
+  private splitKeywordParts(keyword: string): string[] {
+    return keyword
+      .split(':')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+  }
+
+  /**
+   * 단일/비복합 키워드: 정확 매칭만
+   */
+  private async searchArticlesExactOnly(
+    keyword: string,
+    hoursInterval: number,
+    size: number,
+    page: number,
+    from: number,
+  ): Promise<SearchArticlesByKeywordResult> {
     const countQuery = `
     SELECT COUNT(DISTINCT a.id) AS total
     FROM keywords k
@@ -89,10 +126,7 @@ export class ArticleKeywordRepository {
     WHERE (k.normalized_text = $1 OR k.display_text = $1)
       AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
     `;
-    const countResult = await this.dataSource.query(countQuery, [
-      params.keyword,
-      hoursInterval,
-    ]);
+    const countResult = await this.dataSource.query(countQuery, [keyword, hoursInterval]);
     const total = Number.parseInt(countResult[0]?.total ?? '0', 10);
     const totalPages = Math.ceil(total / size);
     const dataQuery = `
@@ -113,20 +147,12 @@ export class ArticleKeywordRepository {
     LIMIT $3 OFFSET $4
     `;
     const rows = await this.dataSource.query(dataQuery, [
-      params.keyword,
+      keyword,
       hoursInterval,
       size,
       from,
     ]);
-    const items: ArticleByKeywordItem[] = rows.map((row) => ({
-      title: row.title,
-      description: this.truncateToDescription(row.body_text),
-      publisher: row.publisher,
-      category: row.category ?? null,
-      url: row.url,
-      publishedAt: row.published_at,
-      weight: row.weight,
-    }));
+    const items = this.mapRowsToItems(rows);
     return {
       total,
       items,
@@ -136,6 +162,136 @@ export class ArticleKeywordRepository {
       hasNext: page < totalPages,
       hasPrev: page > 1,
     };
+  }
+
+  /**
+   * 복합 키워드: 1순위 정확 매칭, 2순위 분리 단일 키워드 매칭 (중복 제거, weight·매칭률 정렬)
+   */
+  private async searchArticlesWithPartialMatch(
+    keyword: string,
+    parts: string[],
+    hoursInterval: number,
+    size: number,
+    page: number,
+    from: number,
+  ): Promise<SearchArticlesByKeywordResult> {
+    const countQuery = `
+    WITH exact_match AS (
+      SELECT ak.article_id
+      FROM keywords k
+      JOIN article_keywords ak ON ak.keyword_id = k.id
+      JOIN articles a ON a.id = ak.article_id
+      WHERE (k.normalized_text = $1 OR k.display_text = $1)
+        AND a.published_at >= NOW() - INTERVAL '1 hour' * $3
+    ),
+    partial_match AS (
+      SELECT ak.article_id
+      FROM keywords k
+      JOIN article_keywords ak ON ak.keyword_id = k.id
+      JOIN articles a ON a.id = ak.article_id
+      WHERE (
+        k.normalized_text = ANY($2::text[])
+        OR k.display_text = ANY($2::text[])
+        OR LOWER(k.normalized_text) IN (SELECT LOWER(x) FROM unnest($2::text[]) AS x)
+      )
+        AND a.published_at >= NOW() - INTERVAL '1 hour' * $3
+    )
+    SELECT COUNT(*) AS total
+    FROM (SELECT article_id FROM exact_match UNION SELECT article_id FROM partial_match) u
+    `;
+    const countResult = await this.dataSource.query(countQuery, [
+      keyword,
+      parts,
+      hoursInterval,
+    ]);
+    const total = Number.parseInt(countResult[0]?.total ?? '0', 10);
+    const totalPages = Math.ceil(total / size);
+    const partsCount = parts.length;
+    const dataQuery = `
+    WITH exact_match AS (
+      SELECT ak.article_id, ak.weight, 1 AS match_rank, 1.0 AS match_rate
+      FROM keywords k
+      JOIN article_keywords ak ON ak.keyword_id = k.id
+      JOIN articles a ON a.id = ak.article_id
+      WHERE (k.normalized_text = $1 OR k.display_text = $1)
+        AND a.published_at >= NOW() - INTERVAL '1 hour' * $3
+    ),
+    partial_match AS (
+      SELECT
+        ak.article_id,
+        SUM(ak.weight) AS weight,
+        2 AS match_rank,
+        COUNT(DISTINCT k.id)::float / $4 AS match_rate
+      FROM keywords k
+      JOIN article_keywords ak ON ak.keyword_id = k.id
+      JOIN articles a ON a.id = ak.article_id
+      WHERE (
+        k.normalized_text = ANY($2::text[])
+        OR k.display_text = ANY($2::text[])
+        OR LOWER(k.normalized_text) IN (SELECT LOWER(x) FROM unnest($2::text[]) AS x)
+      )
+        AND a.published_at >= NOW() - INTERVAL '1 hour' * $3
+        AND ak.article_id NOT IN (SELECT article_id FROM exact_match)
+      GROUP BY ak.article_id
+    ),
+    combined AS (
+      SELECT * FROM exact_match
+      UNION ALL
+      SELECT * FROM partial_match
+    ),
+    ranked AS (
+      SELECT
+        c.article_id,
+        c.weight,
+        c.match_rank,
+        c.match_rate,
+        ROW_NUMBER() OVER (PARTITION BY c.article_id ORDER BY c.match_rank, c.weight DESC) AS rn
+      FROM combined c
+    )
+    SELECT
+      a.title,
+      a.body_text,
+      a.publisher,
+      a.category,
+      a.url,
+      a.published_at,
+      r.weight
+    FROM ranked r
+    JOIN articles a ON a.id = r.article_id
+    WHERE r.rn = 1
+    ORDER BY r.match_rank, r.weight DESC, r.match_rate DESC
+    LIMIT $5 OFFSET $6
+    `;
+    const rows = await this.dataSource.query(dataQuery, [
+      keyword,
+      parts,
+      hoursInterval,
+      partsCount,
+      size,
+      from,
+    ]);
+    const items = this.mapRowsToItems(rows);
+    return {
+      total,
+      items,
+      page,
+      size,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
+  }
+
+  private mapRowsToItems(rows: Record<string, unknown>[]): ArticleByKeywordItem[] {
+    return rows.map((row) => ({
+      title: row.title as string,
+      description: this.truncateToDescription(row.body_text as string | null),
+      publisher: row.publisher as string,
+      category: (row.category as string | null) ?? null,
+      url: row.url as string,
+      publishedAt: row.published_at as Date,
+      weight: row.weight as number,
+    }));
   }
 
   private truncateToDescription(bodyText: string | null): string | null {
