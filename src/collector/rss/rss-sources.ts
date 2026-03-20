@@ -58,19 +58,19 @@ export const RSS_SOURCES: RssSourceMap = {
   //     life: 'https://www.kmib.co.kr/rss/data/kmibLifeRss.xml',
   //   },
   // },
-  chosun: {
-    name: '조선일보',
-    feeds: {
-      politics: 'https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml',
-      economy: 'https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml',
-      society: 'https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml',
-      international: 'https://www.chosun.com/arc/outboundfeeds/rss/category/international/?outputType=xml',
-      culture: 'https://www.chosun.com/arc/outboundfeeds/rss/category/culture-life/?outputType=xml',
-      opinion: 'https://www.chosun.com/arc/outboundfeeds/rss/category/opinion/?outputType=xml',
-      sports: 'https://www.chosun.com/arc/outboundfeeds/rss/category/sports/?outputType=xml',
-      entertainment: 'https://www.chosun.com/arc/outboundfeeds/rss/category/entertainments/?outputType=xml',
-    },
-  },
+  // chosun: {
+  //   name: '조선일보',
+  //   feeds: {
+  //     politics: 'https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml',
+  //     economy: 'https://www.chosun.com/arc/outboundfeeds/rss/category/economy/?outputType=xml',
+  //     society: 'https://www.chosun.com/arc/outboundfeeds/rss/category/national/?outputType=xml',
+  //     international: 'https://www.chosun.com/arc/outboundfeeds/rss/category/international/?outputType=xml',
+  //     culture: 'https://www.chosun.com/arc/outboundfeeds/rss/category/culture-life/?outputType=xml',
+  //     opinion: 'https://www.chosun.com/arc/outboundfeeds/rss/category/opinion/?outputType=xml',
+  //     sports: 'https://www.chosun.com/arc/outboundfeeds/rss/category/sports/?outputType=xml',
+  //     entertainment: 'https://www.chosun.com/arc/outboundfeeds/rss/category/entertainments/?outputType=xml',
+  //   },
+  // },
   hankyung: {
     name: '한국경제',
     feeds: {
