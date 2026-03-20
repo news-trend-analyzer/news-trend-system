@@ -2,6 +2,7 @@ import { ClassSerializerInterceptor, Controller, Get, Query, UseInterceptors } f
 import { plainToInstance } from 'class-transformer';
 import { TrendAnalysisService } from './trend.service';
 import { TrendItemDto } from './dto/trend-item.dto';
+import { RealtimeTrendItemDto } from './dto/realtime-trend-item.dto';
 
 @Controller('trend')
 export class TrendController {
@@ -18,6 +19,18 @@ export class TrendController {
     const limitNum = limit ? parseInt(limit, 10) : 10;
     const trends = await this.trendService.getTopTrends(limitNum);
     return trends.map((item) => plainToInstance(TrendItemDto, item));
+  }
+
+  /**
+   * 실시간 트렌드 키워드 조회 (최근 1시간 화력 중심, 캐시 없음)
+   * @param limit - 조회할 키워드 개수 (기본값: 50)
+   */
+  @Get('realtime')
+  @UseInterceptors(ClassSerializerInterceptor)
+  async getTrendsRealtime(@Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : 50;
+    const trends = await this.trendService.getTrendsRealtime(limitNum);
+    return trends.map((item) => plainToInstance(RealtimeTrendItemDto, item));
   }
 
   /**

@@ -4,7 +4,7 @@ import { Repository, DataSource, QueryRunner } from 'typeorm';
 import { KeywordEntity } from './entities/keyword.entity';
 import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
-import { TopKeyword, RankedKeyword } from '../types/top-keyword.type';
+import { TopKeyword, RankedKeyword, RealtimeKeyword } from '../types/top-keyword.type';
 import { TimeKeyword } from '../types/time-keyword.type';
 import { SearchKeyword } from '../types/keyword.type';
 /**
@@ -115,6 +115,7 @@ export class KeywordRepository {
    */
   async findTopKeywords24h(candidateLimit: number = 50): Promise<RankedKeyword[]> {
     const query = `
+  -- 최근 24시간: 메인 근거. 24h에 점수가 있어야 랭킹 후보 (안정적 트렌드 파악용)
   WITH score_24h AS (
     SELECT
       kt.keyword_id,
@@ -123,6 +124,7 @@ export class KeywordRepository {
     WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'
     GROUP BY kt.keyword_id
   ),
+  -- 최근 1시간: 현재 화력. 24h 대비 최근 활성도 반영
   score_recent AS (
     SELECT
       kt.keyword_id,
@@ -131,6 +133,7 @@ export class KeywordRepository {
     WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
     GROUP BY kt.keyword_id
   ),
+  -- 직전 1시간 (1~2시간 전): 등락 비교용. diffScore = score_recent - score_prev
   score_prev AS (
     SELECT
       kt.keyword_id,
@@ -150,22 +153,23 @@ export class KeywordRepository {
     COALESCE(sr.score_recent, 0) AS "scoreRecent",
     COALESCE(sp.score_prev, 0) AS "scorePrev",
     (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) AS "diffScore",
+    -- 24시간 랭킹용 가중치 (24h·recent 균형, 실시간보다 안정적)
     (
-      COALESCE(s24.score_24h, 0) * 0.4
-      + COALESCE(sr.score_recent, 0) * 0.4
+      COALESCE(s24.score_24h, 0) * 0.4              -- 24시간 누적 40%: 기초 체력
+      + COALESCE(sr.score_recent, 0) * 0.4          -- 최근 1시간 40%: 현재 화력
       + LEAST(
           (COALESCE(sr.score_recent, 0) / (COALESCE(sp.score_prev, 0) + 1)) * 20,
           100
-        )
-      + (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) * 0.2
+        )                                            -- 급상승 가속도 (상한 100)
+      + (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) * 0.2  -- 상승폭 20%
     ) AS "finalScore"
   FROM keywords k
-  JOIN score_24h s24 ON s24.keyword_id = k.id
+  JOIN score_24h s24 ON s24.keyword_id = k.id  -- 24h에 점수 있는 키워드만 (실시간 없어도 포함)
   LEFT JOIN score_recent sr ON sr.keyword_id = k.id
   LEFT JOIN score_prev sp ON sp.keyword_id = k.id
   WHERE k.type = 'COMPOSITE'
   ORDER BY
-    CASE WHEN COALESCE(sr.score_recent, 0) = 0 THEN 1 ELSE 0 END,
+    CASE WHEN COALESCE(sr.score_recent, 0) = 0 THEN 1 ELSE 0 END,  -- 최근 1h 화력 없는 건 후순위
     "finalScore" DESC
   LIMIT $1;
     `;
@@ -182,6 +186,86 @@ export class KeywordRepository {
       finalScore: Number.parseFloat(row.finalScore),
     }));
   }
+
+  /**
+   * 실시간 트렌드 키워드 조회 (최근 1시간 화력 중심)
+   * @param limit - 조회할 키워드 개수 (기본값: 50)
+   */
+  async findTopKeywordsRealtime(limit: number = 50): Promise<RealtimeKeyword[]> {
+    const query = `
+    -- 최근 1시간: 현재의 실시간 화력
+    WITH score_recent AS (
+      SELECT
+        kt.keyword_id,
+        SUM(kt.score_sum)::float8 AS score_recent
+      FROM keyword_timeseries kt
+      WHERE kt.bucket_time >= NOW() - INTERVAL '1 hour'
+      GROUP BY kt.keyword_id
+    ),
+    -- 직전 1시간 (1~2시간 전): 비교 대상 데이터
+    score_prev AS (
+      SELECT
+        kt.keyword_id,
+        SUM(kt.score_sum)::float8 AS score_prev
+      FROM keyword_timeseries kt
+      WHERE kt.bucket_time >= NOW() - INTERVAL '2 hours'
+        AND kt.bucket_time < NOW() - INTERVAL '1 hour'
+      GROUP BY kt.keyword_id
+    ),
+    -- 최근 24시간: 키워드의 기초 체력 (신뢰도 확인용)
+    score_24h AS (
+      SELECT
+        kt.keyword_id,
+        SUM(kt.score_sum)::float8 AS score_24h
+      FROM keyword_timeseries kt
+      WHERE kt.bucket_time >= NOW() - INTERVAL '24 hours'
+      GROUP BY kt.keyword_id
+    )
+    SELECT
+      k.id AS "id",
+      k.normalized_text AS "normalizedText",
+      k.display_text AS "displayText",
+      k.type AS "type",
+      k.created_at AS "createdAt",
+      COALESCE(s24.score_24h, 0) AS "score24h",
+      COALESCE(sr.score_recent, 0) AS "scoreRecent",
+      COALESCE(sp.score_prev, 0) AS "scorePrev",
+      (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) AS "diffScore",
+      -- 실시간 랭킹용 가중치 점수 (소수점 8자리까지 확보하여 정밀도 향상)
+      (
+        COALESCE(sr.score_recent, 0) * 0.6               -- 현재 화력 비중 강화 (60%)
+        + (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) * 0.3 -- 상승폭 비중 (30%)
+        + LEAST((COALESCE(sr.score_recent, 0) / (COALESCE(sp.score_prev, 0) + 1)) * 50, 150) -- 급상승 가속도 점수
+        + (COALESCE(s24.score_24h, 0) * 0.05)           -- 24시간 누적분은 최소 반영 (5%)
+      ) AS "finalScore"
+    FROM keywords k
+    JOIN score_recent sr ON sr.keyword_id = k.id  -- 실시간이므로 현재 점수가 있는 키워드만 노출
+    LEFT JOIN score_prev sp ON sp.keyword_id = k.id
+    LEFT JOIN score_24h s24 ON s24.keyword_id = k.id
+    WHERE k.type = 'COMPOSITE'
+      AND sr.score_recent > 0  -- 최소 화력이 있는 것만 필터링
+    ORDER BY
+      "finalScore" DESC,           -- 1. 계산된 가중치 점수가 높은 순
+      "scoreRecent" DESC,          -- 2. (동점 시) 현재 1시간 화력이 더 강한 순
+      "diffScore" DESC,            -- 3. (동점 시) 상승 속도가 더 가파른 순
+      k.created_at DESC            -- 4. (동점 시) 가장 최근에 생성된 키워드 우선 (신선도)
+    LIMIT $1;
+    `;
+    const result = await this.dataSource.query(query, [limit]);
+    return result.map((row) => ({
+      id: Number(row.id),
+      normalizedText: row.normalizedText,
+      displayText: row.displayText ?? null,
+      type: row.type as 'SINGLE' | 'COMPOSITE' | null,
+      createdAt: row.createdAt ?? null,
+      score24h: Number.parseFloat(row.score24h),
+      scoreRecent: Number.parseFloat(row.scoreRecent),
+      scorePrev: Number.parseFloat(row.scorePrev),
+      diffScore: Number.parseFloat(row.diffScore),
+      finalScore: Number.parseFloat(row.finalScore),
+    }));
+  }
+
   /**
    * 여러 기사의 키워드들을 배치로 저장 (성능 최적화)
    * @param params - 배치 저장 파라미터

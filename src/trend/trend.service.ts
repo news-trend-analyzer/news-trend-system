@@ -513,6 +513,15 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * 실시간 트렌드 조회 (DB 직접 조회, 캐시 없음)
+   * 최근 1시간 화력 중심 가중치로 정렬
+   */
+  async getTrendsRealtime(limit: number = 50) {
+    const clampedLimit = Math.min(Math.max(limit, 1), 100);
+    return this.keywordRepository.findTopKeywordsRealtime(clampedLimit);
+  }
+
+  /**
    * 트렌드 점수 계산
    */
   private calculateTrendScore(totalScore: number, recentScore: number): number {
