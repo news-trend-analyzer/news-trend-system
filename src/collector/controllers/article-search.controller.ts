@@ -1,6 +1,8 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ArticleSearchService } from '../../common/elasticsearch/article-search.service';
+import { ArticleKeywordRepository } from '../../common/database/article-keyword.repository';
 import { SearchArticlesDto } from './dto/search-articles.dto';
+import { SearchArticlesByKeywordDto } from './dto/search-articles-by-keyword.dto';
 
 /**
  * 기사 검색 API 컨트롤러
@@ -10,6 +12,7 @@ import { SearchArticlesDto } from './dto/search-articles.dto';
 export class ArticleSearchController {
   constructor(
     private readonly articleSearchService: ArticleSearchService,
+    private readonly articleKeywordRepository: ArticleKeywordRepository,
   ) {}
 
   /**
@@ -32,6 +35,21 @@ export class ArticleSearchController {
       query: queryParams.query,
       from,
       size,
+    });
+  }
+
+  /**
+   * 키워드로 기사 검색 (keywords, article_keywords, articles 조인)
+   * @param queryParams 검색 파라미터 (DTO로 자동 검증됨)
+   * @returns 검색 결과 (total, items, page, size, totalPages, hasNext, hasPrev)
+   */
+  @Get('by-keyword')
+  async searchArticlesByKeyword(@Query() queryParams: SearchArticlesByKeywordDto) {
+    return this.articleKeywordRepository.searchArticlesByKeyword({
+      keyword: queryParams.keyword,
+      page: queryParams.page,
+      size: queryParams.size,
+      hoursInterval: queryParams.hoursInterval,
     });
   }
 }

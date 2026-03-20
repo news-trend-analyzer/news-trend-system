@@ -5,6 +5,33 @@ import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { Article } from '../types/article.type';
 import { Keyword } from '../types/keyword.type';
 
+export type ArticleByKeywordItem = {
+  readonly id: number;
+  readonly title: string;
+  readonly bodyText: string;
+  readonly publisher: string;
+  readonly url: string;
+  readonly publishedAt: Date;
+  readonly weight: number;
+};
+
+export type SearchArticlesByKeywordParams = {
+  readonly keyword: string;
+  readonly hoursInterval?: number;
+  readonly page?: number;
+  readonly size?: number;
+};
+
+export type SearchArticlesByKeywordResult = {
+  readonly total: number;
+  readonly items: ArticleByKeywordItem[];
+  readonly page: number;
+  readonly size: number;
+  readonly totalPages: number;
+  readonly hasNext: boolean;
+  readonly hasPrev: boolean;
+};
+
 @Injectable()
 export class ArticleKeywordRepository {
   constructor(
@@ -39,6 +66,74 @@ export class ArticleKeywordRepository {
       weight: row.weight,
       bodySnippet: row.body_snippet,
     }));
+  }
+
+  /**
+   * 키워드(normalized_text 또는 display_text)로 기사 검색
+   * @param params 검색 파라미터
+   */
+  async searchArticlesByKeyword(
+    params: SearchArticlesByKeywordParams,
+  ): Promise<SearchArticlesByKeywordResult> {
+    const hoursInterval = params.hoursInterval ?? 24;
+    const size = Math.min(Math.max(params.size ?? 20, 1), 50);
+    const page = Math.max(params.page ?? 1, 1);
+    const from = (page - 1) * size;
+    const countQuery = `
+    SELECT COUNT(DISTINCT a.id) AS total
+    FROM keywords k
+    JOIN article_keywords ak ON ak.keyword_id = k.id
+    JOIN articles a ON a.id = ak.article_id
+    WHERE (k.normalized_text = $1 OR k.display_text = $1)
+      AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
+    `;
+    const countResult = await this.dataSource.query(countQuery, [
+      params.keyword,
+      hoursInterval,
+    ]);
+    const total = Number.parseInt(countResult[0]?.total ?? '0', 10);
+    const totalPages = Math.ceil(total / size);
+    const dataQuery = `
+    SELECT
+      a.id,
+      a.title,
+      a.body_text,
+      a.publisher,
+      a.url,
+      a.published_at,
+      ak.weight
+    FROM keywords k
+    JOIN article_keywords ak ON ak.keyword_id = k.id
+    JOIN articles a ON a.id = ak.article_id
+    WHERE (k.normalized_text = $1 OR k.display_text = $1)
+      AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
+    ORDER BY ak.weight DESC
+    LIMIT $3 OFFSET $4
+    `;
+    const rows = await this.dataSource.query(dataQuery, [
+      params.keyword,
+      hoursInterval,
+      size,
+      from,
+    ]);
+    const items: ArticleByKeywordItem[] = rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      bodyText: row.body_text,
+      publisher: row.publisher,
+      url: row.url,
+      publishedAt: row.published_at,
+      weight: row.weight,
+    }));
+    return {
+      total,
+      items,
+      page,
+      size,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
   }
 
   async getRelatedKeywords(keywordId: number, limit: number): Promise<Keyword[]> {
