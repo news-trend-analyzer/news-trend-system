@@ -54,6 +54,9 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     '1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월',
     '울산', '전국','이시각헤드라인', '날씨','신문', '주요', '역투하', '[사진]'
   ];
+  private readonly STOP_WORDS_SET = new Set(
+    this.STOP_WORDS.map((word) => word.toLowerCase()),
+  );
   
   // Redis 캐시 키
   private readonly CACHE_TOP_TRENDS_KEY = 'trend:cache:top:24h';
@@ -256,9 +259,10 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       .filter((t) => t.length > 0);
     const cleanedTokens = tokens
       .map((t) => this.removeSpecialChars(t))
+      .map((t) => t.toLowerCase())
       .map((t) => this.removeParticles(t))
       .filter(
-        (t) => t.length > 1 && !this.STOP_WORDS.includes(t),
+        (t) => t.length > 1 && !this.STOP_WORDS_SET.has(t),
       );
     return cleanedTokens;
   }
@@ -268,8 +272,12 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
    */
   private removeSpecialChars(text: string): string {
     return text
-      .replace(/["'`""''「」『』《》〈〉【】〔〕]/g, '')
-      .replace(/[,\.;:!?\-_=+\[\]{}()]/g, '')
+      // 유니코드 따옴표/괄호/생략부호/파형 기호 등 노이즈 제거
+      .replace(/[“”‘’"'`「」『』《》〈〉【】〔〕]/g, '')
+      .replace(/[.,;:!?\-_=+\[\]{}()]/g, ' ')
+      .replace(/[~∼〜…]/g, ' ')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
