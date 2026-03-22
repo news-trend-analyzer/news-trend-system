@@ -454,10 +454,9 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 3) DB에서 Composite 키워드 조회 (top N보다 넓게 조회해 등락 비교 정확도 향상)
-    const candidates = await this.keywordRepository.findTopKeywords24h(
-      this.SNAPSHOT_CANDIDATE_LIMIT,
-    );
+    // 3) DB: 복합 키워드 유사 병합 후 대표만 (등락 비교용으로 limit 이상 넓게 조회)
+    const fetchLimit = Math.max(limit, this.SNAPSHOT_CANDIDATE_LIMIT);
+    const candidates = await this.keywordRepository.findTopKeywords24h(fetchLimit);
 
     // 4) 결과 포맷팅 + 등락 계산
     const trends = candidates.map((k, idx) => {
@@ -479,18 +478,15 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
+      const label = k.displayText?.trim() || k.normalizedText;
+
       return {
         id: keywordId,
         rank: currentRank,
-        keyword: k.normalizedText,
-        type: k.type,
+        keyword: label,
         status,
         rankChange: Math.abs(rankChange),
-        score: k.finalScore,
         score24h: k.score24h,
-        scoreRecent: k.scoreRecent,
-        scorePrev: k.scorePrev,
-        diffScore: k.diffScore,
       };
     });
 
@@ -529,99 +525,99 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     return this.keywordRepository.findTopKeywordsRealtime(clampedLimit);
   }
 
-  /**
-   * 트렌드 점수 계산
-   */
-  private calculateTrendScore(totalScore: number, recentScore: number): number {
-    if (totalScore === 0) return 0;
-    const recentRatio = recentScore / totalScore;
-    const baseScore = Math.log10(totalScore + 1) * 10;
-    const trendBoost = recentRatio * 50;
-    return baseScore + trendBoost;
-  }
+  // /**
+  //  * 트렌드 점수 계산
+  //  */
+  // private calculateTrendScore(totalScore: number, recentScore: number): number {
+  //   if (totalScore === 0) return 0;
+  //   const recentRatio = recentScore / totalScore;
+  //   const baseScore = Math.log10(totalScore + 1) * 10;
+  //   const trendBoost = recentRatio * 50;
+  //   return baseScore + trendBoost;
+  // }
 
-  /**
-   * 특정 키워드의 트렌드 정보 조회 (Pipeline 최적화)
-   * @deprecated Redis 기반 로직입니다. 향후 DB 기반으로 재구현 필요합니다.
-   */
-  async getKeywordTrend(keyword: string): Promise<any> {
-    const now = Date.now();
-    const currentHour = Math.floor(now / (1000 * 60 * 60));
+  // /**
+  //  * 특정 키워드의 트렌드 정보 조회 (Pipeline 최적화)
+  //  * @deprecated Redis 기반 로직입니다. 향후 DB 기반으로 재구현 필요합니다.
+  //  */
+  // async getKeywordTrend(keyword: string): Promise<any> {
+  //   const now = Date.now();
+  //   const currentHour = Math.floor(now / (1000 * 60 * 60));
 
-    // Pipeline으로 일괄 조회
-    const pipeline = this.redis.pipeline();
+  //   // Pipeline으로 일괄 조회
+  //   const pipeline = this.redis.pipeline();
     
-    pipeline.get(`${this.KEYWORD_SCORE_PREFIX}${keyword}`);
-    // ZREVRANGE로 최신 기사 조회
-    pipeline.zrevrange(`${this.KEYWORD_ARTICLES_PREFIX}${keyword}`, 0, -1);
-    pipeline.smembers(`${this.SINGLE_INDEX}${keyword}`);
+  //   pipeline.get(`${this.KEYWORD_SCORE_PREFIX}${keyword}`);
+  //   // ZREVRANGE로 최신 기사 조회
+  //   pipeline.zrevrange(`${this.KEYWORD_ARTICLES_PREFIX}${keyword}`, 0, -1);
+  //   pipeline.smembers(`${this.SINGLE_INDEX}${keyword}`);
     
-    for (let hour = 0; hour < this.TREND_WINDOW_HOURS; hour++) {
-      pipeline.get(`${this.KEYWORD_HOUR_PREFIX}${keyword}:${currentHour - hour}`);
-    }
+  //   for (let hour = 0; hour < this.TREND_WINDOW_HOURS; hour++) {
+  //     pipeline.get(`${this.KEYWORD_HOUR_PREFIX}${keyword}:${currentHour - hour}`);
+  //   }
 
-    const results = await pipeline.exec();
-    let idx = 0;
+  //   const results = await pipeline.exec();
+  //   let idx = 0;
 
-    const totalScoreStr = results?.[idx++]?.[1] as string | null;
-    const totalScore = totalScoreStr ? parseFloat(totalScoreStr) : 0;
-    const articles = results?.[idx++]?.[1] as string[];
-    const compositeKeys = results?.[idx++]?.[1] as string[];
+  //   const totalScoreStr = results?.[idx++]?.[1] as string | null;
+  //   const totalScore = totalScoreStr ? parseFloat(totalScoreStr) : 0;
+  //   const articles = results?.[idx++]?.[1] as string[];
+  //   const compositeKeys = results?.[idx++]?.[1] as string[];
 
-    // 시간대별 점수
-    let recentScore = 0;
-    const hourlyBreakdown: any[] = [];
-    for (let hour = 0; hour < this.TREND_WINDOW_HOURS; hour++) {
-      const hourScoreStr = results?.[idx++]?.[1] as string | null;
-      const hourScore = hourScoreStr ? parseFloat(hourScoreStr) : 0;
-      if (hourScore > 0) {
-        recentScore += hourScore;
-        hourlyBreakdown.push({ hour: currentHour - hour, score: hourScore });
-      }
-    }
+  //   // 시간대별 점수
+  //   let recentScore = 0;
+  //   const hourlyBreakdown: any[] = [];
+  //   for (let hour = 0; hour < this.TREND_WINDOW_HOURS; hour++) {
+  //     const hourScoreStr = results?.[idx++]?.[1] as string | null;
+  //     const hourScore = hourScoreStr ? parseFloat(hourScoreStr) : 0;
+  //     if (hourScore > 0) {
+  //       recentScore += hourScore;
+  //       hourlyBreakdown.push({ hour: currentHour - hour, score: hourScore });
+  //     }
+  //   }
 
-    const trendScore = this.calculateTrendScore(totalScore, recentScore);
+  //   const trendScore = this.calculateTrendScore(totalScore, recentScore);
 
-    // 복합키 상세 (Pipeline으로 일괄 조회)
-    const compositeDetails: any[] = [];
-    if (compositeKeys && compositeKeys.length > 0) {
-      const ckPipeline = this.redis.pipeline();
-      for (const ck of compositeKeys) {
-        ckPipeline.zscore(this.COMPOSITE_RANKING, ck);
-        // ZREVRANGE로 최신 기사 조회
-        ckPipeline.zrevrange(`${this.COMPOSITE_ARTICLES}${ck}`, 0, 2);
-      }
+  //   // 복합키 상세 (Pipeline으로 일괄 조회)
+  //   const compositeDetails: any[] = [];
+  //   if (compositeKeys && compositeKeys.length > 0) {
+  //     const ckPipeline = this.redis.pipeline();
+  //     for (const ck of compositeKeys) {
+  //       ckPipeline.zscore(this.COMPOSITE_RANKING, ck);
+  //       // ZREVRANGE로 최신 기사 조회
+  //       ckPipeline.zrevrange(`${this.COMPOSITE_ARTICLES}${ck}`, 0, 2);
+  //     }
       
-      const ckResults = await ckPipeline.exec();
-      let ckIdx = 0;
+  //     const ckResults = await ckPipeline.exec();
+  //     let ckIdx = 0;
       
-      for (const ck of compositeKeys) {
-        const ckScore = ckResults?.[ckIdx++]?.[1] as string | null;
-        const ckArticlesJson = ckResults?.[ckIdx++]?.[1] as string[];
+  //     for (const ck of compositeKeys) {
+  //       const ckScore = ckResults?.[ckIdx++]?.[1] as string | null;
+  //       const ckArticlesJson = ckResults?.[ckIdx++]?.[1] as string[];
         
-        if (ckScore) {
-          compositeDetails.push({
-            compositeKey: ck,
-            keywords: ck.split(':'),
-            score: parseFloat(ckScore),
-            articleCount: Math.round(parseFloat(ckScore) / 10),
-            sampleArticles: ckArticlesJson ? ckArticlesJson.map(json => JSON.parse(json)) : [],
-          });
-        }
-      }
+  //       if (ckScore) {
+  //         compositeDetails.push({
+  //           compositeKey: ck,
+  //           keywords: ck.split(':'),
+  //           score: parseFloat(ckScore),
+  //           articleCount: Math.round(parseFloat(ckScore) / 10),
+  //           sampleArticles: ckArticlesJson ? ckArticlesJson.map(json => JSON.parse(json)) : [],
+  //         });
+  //       }
+  //     }
       
-      compositeDetails.sort((a, b) => b.score - a.score);
-    }
+  //     compositeDetails.sort((a, b) => b.score - a.score);
+  //   }
 
-    return {
-      keyword,
-      totalScore,
-      recentScore,
-      trendScore,
-      articles: articles || [],
-      hourlyBreakdown: hourlyBreakdown.sort((a, b) => b.hour - a.hour),
-      relatedTopics: compositeDetails.slice(0, 5),
-    };
-  }
+  //   return {
+  //     keyword,
+  //     totalScore,
+  //     recentScore,
+  //     trendScore,
+  //     articles: articles || [],
+  //     hourlyBreakdown: hourlyBreakdown.sort((a, b) => b.hour - a.hour),
+  //     relatedTopics: compositeDetails.slice(0, 5),
+  //   };
+  // }
 
 }

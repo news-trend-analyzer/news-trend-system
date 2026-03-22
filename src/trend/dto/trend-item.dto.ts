@@ -10,12 +10,7 @@ export class TrendItemDto {
 
   rank: number;
   keyword: string;
-  type: string | null;
   status: 'up' | 'down' | 'same' | 'new';
   rankChange: number;
-  score: number;
   score24h: number;
-  scoreRecent: number;
-  scorePrev: number;
-  diffScore: number;
 }

@@ -109,81 +109,107 @@ export class KeywordRepository {
   }
 
   /**
-   * 최근 24시간 기준 상위 키워드 조회 (Composite 포함)
-   * @param candidateLimit - 후보 키워드 개수 (필터링 전)
-   * @returns 랭킹 후보 키워드 배열
+   * 최근 24시간 기준 상위 키워드 (COMPOSITE). 토큰·버킷 유사도로 병합 후 대표만 반환.
+   * 시간 창은 DB 세션 기준(운영 KST 가정).
+   *
+   * @param resultLimit - 최종 대표 개수
+   * @param similarityPoolLimit - 유사도 계산에 넣을 상위 후보 수 (작을수록 빠름)
    */
-  async findTopKeywords24h(candidateLimit: number = 50): Promise<RankedKeyword[]> {
+  async findTopKeywords24h(
+    resultLimit: number = 20,
+    similarityPoolLimit: number = 500,
+  ): Promise<RankedKeyword[]> {
     const query = `
-  -- 최근 24시간: 메인 근거. 24h에 점수가 있어야 랭킹 후보 (안정적 트렌드 파악용)
-  WITH score_24h AS (
+  WITH scored_all AS (
     SELECT
-      kt.keyword_id,
-      SUM(kt.score_sum)::float8 AS score_24h
-    FROM keyword_timeseries kt
-    WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '24 hours'
-    GROUP BY kt.keyword_id
+      k.id,
+      k.normalized_text,
+      k.display_text,
+      SPLIT_PART(k.normalized_text, ':', 1) AS t1,
+      SPLIT_PART(k.normalized_text, ':', 2) AS t2,
+      SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END)::float8 AS score_24h,
+      (
+        SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END) * 1.5
+        + SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '2 hours' THEN kt.score_sum ELSE 0 END) * 0.2
+      )::float8 AS final_score
+    FROM keywords k
+    JOIN keyword_timeseries kt ON k.id = kt.keyword_id
+    WHERE k.type = 'COMPOSITE'
+      AND kt.bucket_time >= NOW() - INTERVAL '24 hours'
+    GROUP BY k.id, k.normalized_text, k.display_text
+    HAVING SUM(kt.score_sum) > 0
   ),
-  -- 최근 1시간: 현재 화력. 24h 대비 최근 활성도 반영
-  score_recent AS (
-    SELECT
-      kt.keyword_id,
-      SUM(kt.score_sum)::float8 AS score_recent
-    FROM keyword_timeseries kt
-    WHERE kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
-    GROUP BY kt.keyword_id
+  scored AS (
+    SELECT * FROM scored_all
+    ORDER BY final_score DESC
+    LIMIT $1
   ),
-  -- 직전 1시간 (1~2시간 전): 등락 비교용. diffScore = score_recent - score_prev
-  score_prev AS (
+  active_buckets AS (
+    SELECT s.id, kt.bucket_time
+    FROM scored s
+    JOIN keywords k ON (k.normalized_text = s.t1 OR k.normalized_text = s.t2) AND k.type = 'SINGLE'
+    JOIN keyword_timeseries kt ON kt.keyword_id = k.id
+    WHERE kt.bucket_time >= NOW() - INTERVAL '24 hours'
+      AND kt.score_sum > 0
+    GROUP BY s.id, kt.bucket_time
+  ),
+  bucket_counts AS (
+    SELECT id, COUNT(*)::int AS cnt FROM active_buckets GROUP BY id
+  ),
+  similarity AS (
     SELECT
-      kt.keyword_id,
-      SUM(kt.score_sum)::float8 AS score_prev
-    FROM keyword_timeseries kt
-    WHERE kt.bucket_time < (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 hour'
-      AND kt.bucket_time >= (NOW() AT TIME ZONE 'UTC') - INTERVAL '2 hours'
-    GROUP BY kt.keyword_id
+      s1.id AS low_id,
+      s2.id AS high_id,
+      COUNT(DISTINCT b1.bucket_time) AS shared_cnt,
+      bc1.cnt AS bc1_cnt,
+      bc2.cnt AS bc2_cnt
+    FROM scored s1
+    JOIN scored s2
+      ON s1.id != s2.id
+      AND (s1.t1 IN (s2.t1, s2.t2) OR s1.t2 IN (s2.t1, s2.t2))
+      AND s2.final_score > s1.final_score
+    JOIN active_buckets b1 ON b1.id = s1.id
+    JOIN active_buckets b2 ON b2.id = s2.id AND b1.bucket_time = b2.bucket_time
+    JOIN bucket_counts bc1 ON bc1.id = s1.id
+    JOIN bucket_counts bc2 ON bc2.id = s2.id
+    GROUP BY s1.id, s2.id, bc1.cnt, bc2.cnt
+    HAVING COUNT(DISTINCT b1.bucket_time)::float8
+      / NULLIF(GREATEST(bc1.cnt + bc2.cnt - COUNT(DISTINCT b1.bucket_time), 1), 0) >= 0.35
+  ),
+  sub_map AS (
+    SELECT DISTINCT ON (low_id)
+      low_id AS sub_id,
+      high_id AS main_id
+    FROM similarity
+    ORDER BY low_id, shared_cnt DESC
+  ),
+  group_stats AS (
+    SELECT
+      COALESCE(m.main_id, sa.id) AS rep_id,
+      SUM(sa.final_score)::float8 AS total_group_score,
+      SUM(sa.score_24h)::float8 AS total_group_score24h
+    FROM scored_all sa
+    LEFT JOIN sub_map m ON sa.id = m.sub_id
+    GROUP BY 1
   )
   SELECT
-    k.id AS "id",
-    k.normalized_text AS "normalizedText",
-    k.display_text AS "displayText",
-    k.type AS "type",
-    k.created_at AS "createdAt",
-    COALESCE(s24.score_24h, 0) AS "score24h",
-    COALESCE(sr.score_recent, 0) AS "scoreRecent",
-    COALESCE(sp.score_prev, 0) AS "scorePrev",
-    (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) AS "diffScore",
-    -- 24시간 랭킹용 가중치 (24h·recent 균형, 실시간보다 안정적)
-    (
-      COALESCE(s24.score_24h, 0) * 0.4              -- 24시간 누적 40%: 기초 체력
-      + COALESCE(sr.score_recent, 0) * 0.4          -- 최근 1시간 40%: 현재 화력
-      + LEAST(
-          (COALESCE(sr.score_recent, 0) / (COALESCE(sp.score_prev, 0) + 1)) * 20,
-          100
-        )                                            -- 급상승 가속도 (상한 100)
-      + (COALESCE(sr.score_recent, 0) - COALESCE(sp.score_prev, 0)) * 0.2  -- 상승폭 20%
-    ) AS "finalScore"
-  FROM keywords k
-  JOIN score_24h s24 ON s24.keyword_id = k.id  -- 24h에 점수 있는 키워드만 (실시간 없어도 포함)
-  LEFT JOIN score_recent sr ON sr.keyword_id = k.id
-  LEFT JOIN score_prev sp ON sp.keyword_id = k.id
-  WHERE k.type = 'COMPOSITE'
-  ORDER BY
-    CASE WHEN COALESCE(sr.score_recent, 0) = 0 THEN 1 ELSE 0 END,  -- 최근 1h 화력 없는 건 후순위
-    "finalScore" DESC
-  LIMIT $1;
+    s.id AS "id",
+    s.normalized_text AS "normalizedText",
+    s.display_text AS "displayText",
+    gs.total_group_score24h AS "score24h"
+  FROM scored_all s
+  JOIN group_stats gs ON s.id = gs.rep_id
+  WHERE NOT EXISTS (SELECT 1 FROM sub_map sm WHERE sm.sub_id = s.id)
+  ORDER BY gs.total_group_score DESC
+  LIMIT $2;
     `;
 
-    const result = await this.dataSource.query(query, [candidateLimit]);
+    const result = await this.dataSource.query(query, [similarityPoolLimit, resultLimit]);
     return result.map((row) => ({
       id: Number(row.id),
       normalizedText: row.normalizedText,
-      type: row.type as 'SINGLE' | 'COMPOSITE' | null,
+      displayText: row.displayText ?? null,
       score24h: Number.parseFloat(row.score24h),
-      scoreRecent: Number.parseFloat(row.scoreRecent),
-      scorePrev: Number.parseFloat(row.scorePrev),
-      diffScore: Number.parseFloat(row.diffScore),
-      finalScore: Number.parseFloat(row.finalScore),
     }));
   }
 
