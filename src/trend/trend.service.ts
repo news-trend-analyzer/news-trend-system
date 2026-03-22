@@ -6,10 +6,15 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { ScrapedArticle } from '../collector/models/article.model';
 import { KeywordRepository } from '../common/database/keyword.repository';
+
+/** 24h 상위 트렌드 DB→Redis 갱신 주기(초). @Cron 표현식과 함께 유지 */
+const TOP_TRENDS_REFRESH_SECONDS = 30;
+const TOP_TRENDS_CRON = `*/${TOP_TRENDS_REFRESH_SECONDS} * * * * *` as const;
 
 type KeywordScore = Readonly<{ keyword: string; score: number }>;
 
@@ -60,8 +65,12 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   
   // Redis 캐시 키
   private readonly CACHE_TOP_TRENDS_KEY = 'trend:cache:top:24h';
-  /** API 응답 캐시 TTL. 프론트 요청 시 이 간격마다 최신화 */
-  private readonly CACHE_TTL_SECONDS = 30;
+  /**
+   * 캐시 TTL. 갱신 주기보다 길게 두어 스케줄 지연 시에도 응답 가능하게 함
+   */
+  private readonly CACHE_TTL_SECONDS = TOP_TRENDS_REFRESH_SECONDS * 3;
+  /** GET /trend/top limit 상한. 캐시에 저장할 후보 행 수와 맞춤 */
+  private readonly TOP_TRENDS_API_MAX_LIMIT = 100;
   private readonly LAST_TOP_TRENDS_KEY = 'trend:top:last';
   private readonly LAST_TOP_TRENDS_UPDATED_KEY = 'trend:top:last:updated';
   /** 이전 계산 결과. 스냅샷 갱신 시 current 대신 previous를 저장해 "시간 차 기반 등락" 명확화 */
@@ -70,16 +79,19 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
   private readonly SNAPSHOT_INTERVAL_SECONDS = 600;
   /** 등락 비교용 후보 개수. top N보다 넓게 저장해 15위→9위 같은 상승을 new로 오판하지 않음 */
   private readonly SNAPSHOT_CANDIDATE_LIMIT = 20;
-  
+
+  /** 동시에 하나의 DB 갱신만 (크론 + 캐시 미스 요청) */
+  private topTrendsRefreshInFlight: Promise<any[]> | null = null;
+
   // Redis Keys (getKeywordTrend에서 사용 중 - 향후 DB 기반으로 재구현 필요)
-  private readonly KEYWORD_SCORE_PREFIX = 'trend:score:';
-  private readonly KEYWORD_HOUR_PREFIX = 'trend:hour:';
-  private readonly KEYWORD_ARTICLES_PREFIX = 'trend:articles:';
-  private readonly KEYWORD_RELATION_PREFIX = 'trend:rel:';
-  private readonly COMPOSITE_RANKING = 'trend:composite:ranking';
-  private readonly COMPOSITE_ARTICLES = 'trend:composite:articles:';
-  private readonly SINGLE_INDEX = 'trend:single:index:';
-  private readonly TREND_WINDOW_HOURS = 24;
+  // private readonly KEYWORD_SCORE_PREFIX = 'trend:score:';
+  // private readonly KEYWORD_HOUR_PREFIX = 'trend:hour:';
+  // private readonly KEYWORD_ARTICLES_PREFIX = 'trend:articles:';
+  // private readonly KEYWORD_RELATION_PREFIX = 'trend:rel:';
+  // private readonly COMPOSITE_RANKING = 'trend:composite:ranking';
+  // private readonly COMPOSITE_ARTICLES = 'trend:composite:articles:';
+  // private readonly SINGLE_INDEX = 'trend:single:index:';
+  // private readonly TREND_WINDOW_HOURS = 24;
 
   constructor(
     @InjectQueue('articles') private readonly articlesQueue: Queue,
@@ -121,6 +133,13 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       this.logger.error(`작업 실패: ${job?.id}`, err.stack);
     });
     this.logger.log('트렌드 분석 Worker가 시작되었습니다.');
+
+    void this.runTopTrendsRefresh().catch((err) =>
+      this.logger.error(
+        '초기 24h 상위 트렌드 캐시 실패',
+        err instanceof Error ? err.stack : String(err),
+      ),
+    );
 
     // 30초마다 남은 키워드 배치 flush (트래픽이 적어도 DB 누적 저장되도록)
     this.keywordFlushIntervalId = setInterval(() => {
@@ -421,19 +440,45 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
 
 
   /**
-   * 상위 트렌드 조회 (DB 기반, 24시간 기준)
-   * Composite 키워드를 점수 순으로 조회하여 그대로 반환
+   * 상위 트렌드 조회 (Redis 캐시 우선. 스케줄러가 주기적으로 DB 갱신)
    */
   async getTopTrends(limit: number = 10): Promise<any[]> {
-    // 1) 캐시된 랭킹이 있으면 그대로 반환 (등락 정보 포함)
+    const clamped = Math.min(Math.max(limit, 1), this.TOP_TRENDS_API_MAX_LIMIT);
     const cacheKey = this.CACHE_TOP_TRENDS_KEY;
     const cached = await this.redis.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached);
-      return parsed.slice(0, limit);
+      const parsed = JSON.parse(cached) as any[];
+      return parsed.slice(0, clamped);
     }
 
-    // 2) 이전 랭킹 스냅샷 로드 (등락 계산용)
+    const trends = await this.runTopTrendsRefresh();
+    return trends.slice(0, clamped);
+  }
+
+  /** 주기적으로 24h 상위 트렌드 DB 조회 후 Redis 캐시 갱신 */
+  @Cron(TOP_TRENDS_CRON)
+  handleTopTrendsRefreshCron(): void {
+    void this.runTopTrendsRefresh().catch((err) =>
+      this.logger.error(
+        '24h 상위 트렌드 캐시 갱신 실패',
+        err instanceof Error ? err.stack : String(err),
+      ),
+    );
+  }
+
+  private async runTopTrendsRefresh(): Promise<any[]> {
+    if (this.topTrendsRefreshInFlight) {
+      return this.topTrendsRefreshInFlight;
+    }
+    this.topTrendsRefreshInFlight = this.doComputeAndStoreTopTrends().finally(() => {
+      this.topTrendsRefreshInFlight = null;
+    });
+    return this.topTrendsRefreshInFlight;
+  }
+
+  private async doComputeAndStoreTopTrends(): Promise<any[]> {
+    const cacheKey = this.CACHE_TOP_TRENDS_KEY;
+
     const lastSnapshotJson = await this.redis.get(this.LAST_TOP_TRENDS_KEY);
     const prevRankMap = new Map<number, number>();
     if (lastSnapshotJson) {
@@ -454,11 +499,9 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
-    // 3) DB: 복합 키워드 유사 병합 후 대표만 (등락 비교용으로 limit 이상 넓게 조회)
-    const fetchLimit = Math.max(limit, this.SNAPSHOT_CANDIDATE_LIMIT);
+    const fetchLimit = Math.max(this.SNAPSHOT_CANDIDATE_LIMIT, this.TOP_TRENDS_API_MAX_LIMIT);
     const candidates = await this.keywordRepository.findTopKeywords24h(fetchLimit);
 
-    // 4) 결과 포맷팅 + 등락 계산
     const trends = candidates.map((k, idx) => {
       const currentRank = idx + 1;
       const keywordId = Number(k.id);
@@ -468,7 +511,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       let rankChange = 0;
 
       if (prevRank !== null) {
-        rankChange = prevRank - currentRank; // +면 상승, -면 하강
+        rankChange = prevRank - currentRank;
         if (rankChange > 0) {
           status = 'up';
         } else if (rankChange < 0) {
@@ -492,10 +535,8 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
 
     const trendsJson = JSON.stringify(trends);
 
-    // 5) 캐시 저장 (항상)
     await this.redis.setex(cacheKey, this.CACHE_TTL_SECONDS, trendsJson);
 
-    // 6) 스냅샷 갱신: current가 아닌 previous를 저장해 "이전 시점 기준" 등락 비교
     const nowSec = Math.floor(Date.now() / 1000);
     const lastUpdated = await this.redis.get(this.LAST_TOP_TRENDS_UPDATED_KEY);
     const shouldUpdateSnapshot =
@@ -513,7 +554,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
       await this.redis.set(this.PREVIOUS_RESULT_KEY, trendsJson);
     }
 
-    return trends.slice(0, limit);
+    return trends;
   }
 
   /**
