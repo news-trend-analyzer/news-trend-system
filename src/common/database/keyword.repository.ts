@@ -465,8 +465,11 @@ export class KeywordRepository {
       AS t(normalized_text, display_text, type)
       ON CONFLICT (normalized_text)
       DO UPDATE SET 
-        display_text = EXCLUDED.display_text,
-        type = COALESCE(EXCLUDED.type, keywords.type)
+        -- 수동으로 display_text를 수정해도 다음 upsert에서 덮어쓰지 않도록 유지
+        -- (빈 문자열일 때만 EXCLUDED 값으로 보정)
+        display_text = COALESCE(NULLIF(keywords.display_text, ''), EXCLUDED.display_text),
+        -- type도 기존 값이 있을 때는 유지 (NULL일 때만 채우기)
+        type = COALESCE(keywords.type, EXCLUDED.type)
       RETURNING id, normalized_text
     `;
     const result = await queryRunner.query(query, [
