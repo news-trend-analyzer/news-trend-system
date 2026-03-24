@@ -20,7 +20,7 @@ export class OpenAILlmService implements LlmService {
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    this.model = this.configService.get<string>('OPENAI_MODEL', 'gpt-4o-mini');
+    this.model = this.configService.get<string>('OPENAI_MODEL', 'gpt-5.4-nano');
     this.enabled = Boolean(apiKey);
     if (apiKey) {
       this.client = new OpenAI({ apiKey });
