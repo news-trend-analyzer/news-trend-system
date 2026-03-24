@@ -135,6 +135,14 @@ class EnvironmentVariables {
   @Min(1)
   @Max(60)
   BUCKET_MINUTES?: number;
+
+  @IsOptional()
+  @IsString()
+  OPENAI_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  OPENAI_MODEL?: string;
 }
 
 /**

@@ -1,6 +1,7 @@
 export type TopKeyword = {
   id: number;
   normalizedText: string;
+  displayText: string | null;
   freqSum: number;
   scoreSum: number;
 };
