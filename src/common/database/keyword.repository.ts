@@ -93,13 +93,14 @@ export class KeywordRepository {
       SELECT
         k.id AS "id",
         k.normalized_text AS "normalizedText",
+        k.display_text AS "displayText",
         SUM(kt.freq)::bigint AS "freqSum",
         SUM(kt.score_sum)::float8 AS "scoreSum"
       FROM keyword_timeseries kt
       JOIN recent_buckets rb ON rb.bucket_time = kt.bucket_time
       JOIN keywords k ON k.id = kt.keyword_id
       WHERE k.type = 'SINGLE'
-      GROUP BY k.id, k.normalized_text
+      GROUP BY k.id, k.normalized_text, k.display_text
       ORDER BY "scoreSum" DESC
       LIMIT $2;
     `;
@@ -108,6 +109,7 @@ export class KeywordRepository {
     return result.map((row) => ({
       id: row.id,
       normalizedText: row.normalizedText,
+      displayText: row.displayText ?? null,
       freqSum: row.freqSum,
       scoreSum: row.scoreSum,
     }));
