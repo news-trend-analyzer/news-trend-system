@@ -41,6 +41,13 @@ export class KeywordInsightRepository {
   }
 
   /**
+   * 키워드 ID로 인사이트 단건 조회
+   */
+  async findByKeywordId(keywordId: number): Promise<KeywordInsightEntity | null> {
+    return this.repository.findOne({ where: { keywordId } });
+  }
+
+  /**
    * 키워드 ID 목록에 해당하는 인사이트 조회 (랭킹 순 유지용 id 순서 전달)
    */
   async findByKeywordIds(keywordIds: number[]): Promise<Map<number, KeywordInsightEntity>> {

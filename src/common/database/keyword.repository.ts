@@ -24,6 +24,11 @@ export class KeywordRepository {
     private readonly keywordTimeseriesRepository: Repository<KeywordTimeseriesEntity>,
     private readonly dataSource: DataSource,
   ) {}
+
+  async findById(id: number): Promise<KeywordEntity | null> {
+    return this.keywordRepository.findOne({ where: { id } });
+  }
+
   async searchKeyword(keyword: string, limit: number): Promise<SearchKeyword[]> {
     const query = `
       SELECT

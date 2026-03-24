@@ -175,6 +175,27 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
     return items.slice(0, Math.min(limit, items.length));
   }
 
+  /**
+   * 키워드 ID로 LLM 인사이트 단건 조회
+   */
+  async getInsightByKeywordId(keywordId: number): Promise<KeywordInsightItem | null> {
+    const [keyword, insight] = await Promise.all([
+      this.keywordRepository.findById(keywordId),
+      this.keywordInsightRepository.findByKeywordId(keywordId),
+    ]);
+    if (!keyword) {
+      return null;
+    }
+    const label = keyword.displayText?.trim() || keyword.normalizedText;
+    return {
+      keywordId: keyword.id,
+      keyword: label,
+      summary: insight?.summary ?? null,
+      articleIds: insight?.articleIds ?? null,
+      analyzedAt: insight?.analyzedAt ?? null,
+    };
+  }
+
   private async fetchTopKeywordsWithInsights(
     limit: number,
   ): Promise<KeywordInsightItem[]> {
