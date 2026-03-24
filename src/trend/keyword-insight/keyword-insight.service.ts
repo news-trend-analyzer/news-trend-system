@@ -16,7 +16,7 @@ import type { RankedKeyword } from '../../common/types/top-keyword.type';
 const TOP_KEYWORDS_LIMIT = 20;
 const ARTICLES_PER_KEYWORD = 5;
 const MAX_CHARS_PER_ARTICLE = 1500;
-const CRON_EXPRESSION = '0 */30 * * * *'; // 30분마다
+const CRON_EXPRESSION = '0 */10 * * * *'; // 10분마다
 const CACHE_KEY = 'trend:keyword-insight:top';
 const CACHE_MAX_LIMIT = 50;
 
@@ -58,7 +58,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 30분마다 상위 20개 랭킹 키워드 중 미분석 키워드에 대해 LLM 요약 수행
+   * 10분마다 상위 20개 랭킹 키워드 중 미분석 키워드에 대해 LLM 요약 수행
    */
   @Cron(CRON_EXPRESSION)
   async runScheduledInsight(): Promise<void> {
