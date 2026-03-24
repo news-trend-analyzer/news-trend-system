@@ -11,7 +11,7 @@ export class TrendController {
   /**
    * 상위 트렌드 키워드 조회
    * @param limit - 조회할 키워드 개수 (기본값: 20)
-   * @returns 상위 트렌드 키워드 배열 (id는 응답에서 제외)
+   * @returns 상위 트렌드 키워드 배열
    */
   @Get('top')
   @UseInterceptors(ClassSerializerInterceptor)
