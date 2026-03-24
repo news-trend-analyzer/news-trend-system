@@ -51,6 +51,12 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     this.logger.log('KeywordInsightService Redis 연결됨');
+    void this.processNewKeywords().catch((err) =>
+      this.logger.error(
+        '키워드 인사이트 초기 실행 실패',
+        err instanceof Error ? err.stack : String(err),
+      ),
+    );
   }
 
   onModuleDestroy(): void {
@@ -62,58 +68,53 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
    */
   @Cron(CRON_EXPRESSION)
   async runScheduledInsight(): Promise<void> {
-    if (this.isRunning) {
-      this.logger.debug('이전 인사이트 작업 진행 중, 스킵');
-      return;
-    }
-    this.isRunning = true;
-    try {
-      await this.processNewKeywords();
-    } catch (err) {
-      this.logger.error(
-        '키워드 인사이트 스케줄 실패',
-        err instanceof Error ? err.stack : String(err),
-      );
-    } finally {
-      this.isRunning = false;
-    }
+    await this.processNewKeywords();
   }
 
   /**
    * 상위 N개 키워드 중 keyword_insights에 없는 것만 분석 후 저장
    */
   async processNewKeywords(limit: number = TOP_KEYWORDS_LIMIT): Promise<number> {
-    const topKeywords = await this.keywordRepository.findTopKeywords24h(limit);
-    if (topKeywords.length === 0) {
+    if (this.isRunning) {
+      this.logger.debug('이전 인사이트 작업 진행 중, 스킵');
       return 0;
     }
-    const keywordIds = topKeywords.map((k) => k.id);
-    const existingIds = await this.keywordInsightRepository.findExistingKeywordIds(
-      keywordIds,
-    );
-    const toProcess = topKeywords.filter((k) => !existingIds.has(k.id));
-    if (toProcess.length === 0) {
-      this.logger.debug('새로 분석할 키워드 없음');
-      return 0;
-    }
-    this.logger.log(`미분석 키워드 ${toProcess.length}건 처리 시작`);
-    let processed = 0;
-    for (const kw of toProcess) {
-      try {
-        await this.analyzeAndSaveOne(kw);
-        processed += 1;
-      } catch (err) {
-        this.logger.warn(
-          `키워드 ${kw.id}(${kw.normalizedText}) 인사이트 실패`,
-          err instanceof Error ? err.message : String(err),
-        );
+    this.isRunning = true;
+    try {
+      const topKeywords = await this.keywordRepository.findTopKeywords24h(limit);
+      if (topKeywords.length === 0) {
+        return 0;
       }
+      const keywordIds = topKeywords.map((k) => k.id);
+      const existingIds = await this.keywordInsightRepository.findExistingKeywordIds(
+        keywordIds,
+      );
+      const toProcess = topKeywords.filter((k) => !existingIds.has(k.id));
+      if (toProcess.length === 0) {
+        this.logger.debug('새로 분석할 키워드 없음');
+        return 0;
+      }
+      this.logger.log(`미분석 키워드 ${toProcess.length}건 처리 시작`);
+      let processed = 0;
+      for (const kw of toProcess) {
+        try {
+          await this.analyzeAndSaveOne(kw);
+          processed += 1;
+        } catch (err) {
+          this.logger.warn(
+            `키워드 ${kw.id}(${kw.normalizedText}) 인사이트 실패`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }
+      this.logger.log(`키워드 인사이트 ${processed}건 완료`);
+      if (processed > 0) {
+        await this.invalidateCache();
+      }
+      return processed;
+    } finally {
+      this.isRunning = false;
     }
-    this.logger.log(`키워드 인사이트 ${processed}건 완료`);
-    if (processed > 0) {
-      await this.invalidateCache();
-    }
-    return processed;
   }
 
   private async invalidateCache(): Promise<void> {
