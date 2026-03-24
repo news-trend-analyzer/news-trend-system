@@ -34,6 +34,21 @@ export type SearchArticlesByKeywordResult = {
   readonly hasPrev: boolean;
 };
 
+export type ArticleBodyForInsight = {
+  readonly id: number;
+  readonly title: string;
+  readonly bodySnippet: string;
+  readonly publisher: string;
+  readonly url: string;
+};
+
+export type GetTopArticleBodiesByKeywordParams = {
+  readonly keywordId: number;
+  readonly hoursInterval?: number;
+  readonly limit?: number;
+  readonly maxCharsPerArticle?: number;
+};
+
 @Injectable()
 export class ArticleKeywordRepository {
   constructor(
@@ -41,6 +56,46 @@ export class ArticleKeywordRepository {
     private readonly articleKeywordRepository: Repository<ArticleKeywordEntity>,
     private readonly dataSource: DataSource,
   ) {}
+
+  /**
+   * 키워드 ID 기준 상위 기사 본문 조회 (LLM 인사이트용)
+   * @param params keywordId, hoursInterval, limit, maxCharsPerArticle
+   */
+  async getTopArticleBodiesByKeyword(
+    params: GetTopArticleBodiesByKeywordParams,
+  ): Promise<ArticleBodyForInsight[]> {
+    const hoursInterval = params.hoursInterval ?? 24;
+    const limit = Math.min(Math.max(params.limit ?? 5, 1), 10);
+    const maxChars = params.maxCharsPerArticle ?? 1500;
+    const query = `
+    SELECT
+      a.id,
+      a.title,
+      a.body_text,
+      a.publisher,
+      a.url
+    FROM article_keywords ak
+    JOIN articles a ON a.id = ak.article_id
+    WHERE ak.keyword_id = $1
+      AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
+    ORDER BY ak.weight DESC, a.published_at DESC
+    LIMIT $3
+    `;
+    const rows = await this.dataSource.query(query, [params.keywordId, hoursInterval, limit]);
+    return rows.map((row) => {
+      const bodyText = (row.body_text as string | null) ?? '';
+      const trimmed = bodyText.trim();
+      const snippet =
+        trimmed.length <= maxChars ? trimmed : `${trimmed.slice(0, maxChars)}...`;
+      return {
+        id: Number(row.id),
+        title: row.title as string,
+        bodySnippet: snippet,
+        publisher: row.publisher as string,
+        url: row.url as string,
+      };
+    });
+  }
 
   async getRelatedArticles(keywordId: number): Promise<Article[]> {
     const query = `

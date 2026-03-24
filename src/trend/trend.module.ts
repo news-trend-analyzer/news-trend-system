@@ -7,6 +7,8 @@ import { TrendController } from './trend.controller';
 import { DatabaseModule } from '../common/database/database.module';
 import { DataReportController } from './data-report/data-report.controller';
 import { DataReportService } from './data-report/data-report.service';
+import { KeywordInsightModule } from './keyword-insight/keyword-insight.module';
+
 @Module({
   imports: [
     ScheduleModule.forRoot(),
@@ -15,6 +17,7 @@ import { DataReportService } from './data-report/data-report.service';
       name: 'articles',
     }),
     DatabaseModule,
+    KeywordInsightModule,
   ],
   controllers: [TrendController, DataReportController],
   providers: [TrendAnalysisService, DataReportService],

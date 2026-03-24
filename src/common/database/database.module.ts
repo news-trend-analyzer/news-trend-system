@@ -7,9 +7,11 @@ import { KeywordEntity } from './entities/keyword.entity';
 import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
 import { KeywordAliasEntity } from './entities/keyword-alias.entity';
+import { KeywordInsightEntity } from './entities/keyword-insight.entity';
 import { ArticleRepository } from './article.repository';
 import { KeywordRepository } from './keyword.repository';
 import { ArticleKeywordRepository } from './article-keyword.repository';
+import { KeywordInsightRepository } from './keyword-insight.repository';
 /**
  * 데이터베이스 연동 모듈
  * TypeORM을 사용하여 PostgreSQL 연결
@@ -32,6 +34,7 @@ import { ArticleKeywordRepository } from './article-keyword.repository';
               ArticleKeywordEntity,
               KeywordTimeseriesEntity,
               KeywordAliasEntity,
+              KeywordInsightEntity,
             ],
             synchronize: false,
             logging: configService.get<string>('NODE_ENV') === 'development',
@@ -50,6 +53,7 @@ import { ArticleKeywordRepository } from './article-keyword.repository';
             ArticleKeywordEntity,
             KeywordTimeseriesEntity,
             KeywordAliasEntity,
+            KeywordInsightEntity,
           ],
           synchronize: false,
           logging: configService.get<string>('NODE_ENV') === 'development',
@@ -62,10 +66,22 @@ import { ArticleKeywordRepository } from './article-keyword.repository';
       ArticleKeywordEntity,
       KeywordTimeseriesEntity,
       KeywordAliasEntity,
+      KeywordInsightEntity,
     ]),
   ],
-  providers: [ArticleRepository, KeywordRepository, ArticleKeywordRepository],
-  exports: [TypeOrmModule, ArticleRepository, KeywordRepository, ArticleKeywordRepository],
+  providers: [
+    ArticleRepository,
+    KeywordRepository,
+    ArticleKeywordRepository,
+    KeywordInsightRepository,
+  ],
+  exports: [
+    TypeOrmModule,
+    ArticleRepository,
+    KeywordRepository,
+    ArticleKeywordRepository,
+    KeywordInsightRepository,
+  ],
 })
 export class DatabaseModule {}
 
