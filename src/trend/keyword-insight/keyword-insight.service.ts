@@ -76,13 +76,15 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
    */
   async processNewKeywords(limit: number = TOP_KEYWORDS_LIMIT): Promise<number> {
     if (this.isRunning) {
-      this.logger.debug('이전 인사이트 작업 진행 중, 스킵');
+      this.logger.log('이전 인사이트 작업 진행 중, 스킵');
       return 0;
     }
     this.isRunning = true;
     try {
+      this.logger.log('키워드 인사이트 처리 시작');
       const topKeywords = await this.keywordRepository.findTopKeywords24h(limit);
       if (topKeywords.length === 0) {
+        this.logger.log('상위 랭킹 키워드 없음, 스킵');
         return 0;
       }
       const keywordIds = topKeywords.map((k) => k.id);
@@ -91,7 +93,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
       );
       const toProcess = topKeywords.filter((k) => !existingIds.has(k.id));
       if (toProcess.length === 0) {
-        this.logger.debug('새로 분석할 키워드 없음');
+        this.logger.log('새로 분석할 키워드 없음 (모두 기존 인사이트 보유)');
         return 0;
       }
       this.logger.log(`미분석 키워드 ${toProcess.length}건 처리 시작`);
