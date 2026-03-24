@@ -47,7 +47,7 @@ export class OpenAILlmService implements LlmService {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
       ],
-      max_tokens: 500,
+      max_completion_tokens: 500,
       temperature: 0.2,
     });
     const content = response.choices[0]?.message?.content?.trim();
