@@ -10,6 +10,7 @@ import { FileArticleSink } from './sink/file-article-sink';
 import { CompositeArticleSink } from './sink/composite-article-sink';
 import { ElasticsearchModule } from '../common/elasticsearch/elasticsearch.module';
 import { ArticleSearchController } from './controllers/article-search.controller';
+import { ArticleSearchByKeywordService } from './services/article-search-by-keyword.service';
 import { DatabaseModule } from '../common/database/database.module';
 
 @Module({
@@ -21,6 +22,7 @@ import { DatabaseModule } from '../common/database/database.module';
   ],
   controllers: [CollectorController, ArticleSearchController],
   providers: [
+    ArticleSearchByKeywordService,
     CollectorService,
     ScraperService,
     SchedulerService,

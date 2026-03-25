@@ -1,6 +1,6 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ArticleSearchService } from '../../common/elasticsearch/article-search.service';
-import { ArticleKeywordRepository } from '../../common/database/article-keyword.repository';
+import { ArticleSearchByKeywordService } from '../services/article-search-by-keyword.service';
 import { SearchArticlesDto } from './dto/search-articles.dto';
 import { SearchArticlesByKeywordDto } from './dto/search-articles-by-keyword.dto';
 
@@ -12,7 +12,7 @@ import { SearchArticlesByKeywordDto } from './dto/search-articles-by-keyword.dto
 export class ArticleSearchController {
   constructor(
     private readonly articleSearchService: ArticleSearchService,
-    private readonly articleKeywordRepository: ArticleKeywordRepository,
+    private readonly articleSearchByKeywordService: ArticleSearchByKeywordService,
   ) {}
 
   /**
@@ -45,7 +45,7 @@ export class ArticleSearchController {
    */
   @Get('by-keyword')
   async searchArticlesByKeyword(@Query() queryParams: SearchArticlesByKeywordDto) {
-    return this.articleKeywordRepository.searchArticlesByKeyword({
+    return this.articleSearchByKeywordService.searchArticlesByKeyword({
       keyword: queryParams.keyword,
       page: queryParams.page,
       size: queryParams.size,
