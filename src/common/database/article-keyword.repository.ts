@@ -135,6 +135,7 @@ export class ArticleKeywordRepository {
   /**
    * 키워드(normalized_text 또는 display_text)로 기사 검색
    * - 복합 키워드(BTS:공연) 시 : 기준 분리하여 1순위 정확 매칭, 2순위 단일 키워드 관련성 매칭
+   * - keywordId: 복합 행이면 텍스트 검색과 동일하게 콜론 분리·부분 매칭, 단일이면 keyword_id 직접 조회
    * @param params 검색 파라미터
    */
   async searchArticlesByKeyword(
@@ -146,6 +147,22 @@ export class ArticleKeywordRepository {
     const from = (page - 1) * size;
     if ('keywordId' in params) {
       const keywordId = Math.floor(params.keywordId);
+      const shape = await this.findKeywordSearchShapeById(keywordId);
+      if (!shape) {
+        return this.buildEmptySearchArticlesResult(page, size);
+      }
+      const keyword = shape.normalizedText.trim();
+      const parts = this.splitKeywordParts(keyword);
+      if (parts.length >= 2) {
+        return this.searchArticlesWithPartialMatch(
+          keyword,
+          parts,
+          hoursInterval,
+          size,
+          page,
+          from,
+        );
+      }
       return this.searchArticlesByKeywordId(
         keywordId,
         hoursInterval,
@@ -170,8 +187,37 @@ export class ArticleKeywordRepository {
     );
   }
 
+  private async findKeywordSearchShapeById(
+    keywordId: number,
+  ): Promise<{ readonly normalizedText: string } | null> {
+    const rows = await this.dataSource.query(
+      `SELECT normalized_text AS "normalizedText" FROM keywords WHERE id = $1`,
+      [keywordId],
+    );
+    const text = rows[0]?.normalizedText as string | undefined;
+    if (text == null || String(text).trim().length === 0) {
+      return null;
+    }
+    return { normalizedText: String(text) };
+  }
+
+  private buildEmptySearchArticlesResult(
+    page: number,
+    size: number,
+  ): SearchArticlesByKeywordResult {
+    return {
+      total: 0,
+      items: [],
+      page,
+      size,
+      totalPages: 0,
+      hasNext: false,
+      hasPrev: page > 1,
+    };
+  }
+
   /**
-   * 키워드 PK 기준 기사 검색 (텍스트/복합 분기 없음)
+   * 단일 키워드 PK만 article_keywords에 붙은 기사 검색 (복합은 searchArticlesByKeyword 상위 분기)
    */
   private async searchArticlesByKeywordId(
     keywordId: number,
