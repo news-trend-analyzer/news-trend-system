@@ -23,15 +23,19 @@ const ARTICLES_BY_KEYWORD_CRON =
   `*/${ARTICLES_BY_KEYWORD_REFRESH_SECONDS} * * * * *` as const;
 /** Redis 키 만료(초). 프리워밍이 없는 조합은 이 시간 동안 히트 */
 const CACHE_TTL_SECONDS = 300;
-/** 트렌드 /trend/realtime 기본 limit(20)과 맞춤 */
+/** 실시간·24h 각각 가져올 상위 N (합쳐서 중복 제거 후 프리워밍) */
 const PREWARM_KEYWORD_LIMIT = 20;
-/** 동시 DB 조회 수 (연속 await 제거로 기동·크론 주기 내 프리워밍 완료 시간 단축) */
-const PREWARM_CONCURRENCY = 8;
-const PREWARM_DEFAULT_PARAMS = {
-  page: 1,
-  size: 20,
-  hoursInterval: 24,
-} as const;
+/**
+ * 동시에 돌리는 키워드 수. TypeORM 기본 풀(대략 10)보다 크면 대기가 생길 수 있어 16 정도가 상한에 가깝고,
+ * DB max_connections·풀 설정을 올렸다면 24~32까지도 시험 가능.
+ */
+const PREWARM_CONCURRENCY = 16;
+const PREWARM_PAGE = 1;
+const PREWARM_HOURS_INTERVAL = 24;
+/**
+ * 클라가 쓰는 size마다 키가 갈라짐. 프로덕션(예: size=5) + API 기본(미지정→20) 둘 다 워밍.
+ */
+const PREWARM_PAGE_SIZES = [5, 20] as const;
 
 /** 컨트롤러·DTO에서 들어오는 원시 쿼리 */
 type ArticleSearchByKeywordQuery = {
@@ -166,24 +170,26 @@ export class ArticleSearchByKeywordService
     }
     const keysWarmed = new Set<string>();
     const prewarmOne = async (keywordId: number): Promise<void> => {
-      const normalized = this.normalizeParams({
-        keywordId,
-        page: PREWARM_DEFAULT_PARAMS.page,
-        size: PREWARM_DEFAULT_PARAMS.size,
-        hoursInterval: PREWARM_DEFAULT_PARAMS.hoursInterval,
-      });
-      const key = this.buildCacheKey(normalized);
-      if (keysWarmed.has(key)) {
-        return;
-      }
-      keysWarmed.add(key);
-      try {
-        await this.doComputeAndStoreArticlesByKeyword(key, normalized);
-      } catch (err) {
-        this.logger.warn(
-          `키워드 기사 캐시 프리워밍 실패 keywordId=${keywordId}`,
-          err instanceof Error ? err.message : String(err),
-        );
+      for (const pageSize of PREWARM_PAGE_SIZES) {
+        const normalized = this.normalizeParams({
+          keywordId,
+          page: PREWARM_PAGE,
+          size: pageSize,
+          hoursInterval: PREWARM_HOURS_INTERVAL,
+        });
+        const key = this.buildCacheKey(normalized);
+        if (keysWarmed.has(key)) {
+          continue;
+        }
+        keysWarmed.add(key);
+        try {
+          await this.doComputeAndStoreArticlesByKeyword(key, normalized);
+        } catch (err) {
+          this.logger.warn(
+            `키워드 기사 캐시 프리워밍 실패 keywordId=${keywordId} size=${pageSize}`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
     };
     for (let i = 0; i < orderedIds.length; i += PREWARM_CONCURRENCY) {
