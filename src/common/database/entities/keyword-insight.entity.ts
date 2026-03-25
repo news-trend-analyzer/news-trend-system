@@ -15,6 +15,9 @@ export class KeywordInsightEntity {
   @PrimaryColumn({ type: 'bigint', name: 'keyword_id' })
   keywordId: number;
 
+  @PrimaryColumn({ type: 'date', name: 'analysis_date' })
+  analysisDate: string;
+
   @Column({ type: 'text', name: 'summary' })
   summary: string;
 

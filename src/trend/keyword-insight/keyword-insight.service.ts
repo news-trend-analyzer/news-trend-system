@@ -64,7 +64,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 10분마다 상위 20개 랭킹 키워드 중 미분석 키워드에 대해 LLM 요약 수행
+   * 10분마다 상위 랭킹 키워드 중 오늘 analysis_date에 없는 것만 LLM 요약 수행
    */
   @Cron(CRON_EXPRESSION)
   async runScheduledInsight(): Promise<void> {
@@ -72,7 +72,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * 상위 N개 키워드 중 keyword_insights에 없는 것만 분석 후 저장
+   * 상위 N개 키워드 중 오늘 analysis_date 인사이트가 없는 것만 분석 후 저장
    */
   async processNewKeywords(limit: number = TOP_KEYWORDS_LIMIT): Promise<number> {
     if (this.isRunning) {
@@ -88,19 +88,21 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
         return 0;
       }
       const keywordIds = topKeywords.map((k) => k.id);
-      const existingIds = await this.keywordInsightRepository.findExistingKeywordIds(
+      const analysisDate = this.getKstDateString();
+      const existingTodayIds = await this.keywordInsightRepository.findExistingKeywordIdsByDate(
         keywordIds,
+        analysisDate,
       );
-      const toProcess = topKeywords.filter((k) => !existingIds.has(k.id));
+      const toProcess = topKeywords.filter((k) => !existingTodayIds.has(k.id));
       if (toProcess.length === 0) {
-        this.logger.log('새로 분석할 키워드 없음 (모두 기존 인사이트 보유)');
+        this.logger.log(`오늘(${analysisDate}) 분석 대상 없음 (상위 ${limit}개 모두 생성됨)`);
         return 0;
       }
-      this.logger.log(`미분석 키워드 ${toProcess.length}건 처리 시작`);
+      this.logger.log(`오늘(${analysisDate}) 인사이트 ${toProcess.length}건 처리 시작`);
       let processed = 0;
       for (const kw of toProcess) {
         try {
-          await this.analyzeAndSaveOne(kw);
+          await this.analyzeAndSaveOne(kw, analysisDate);
           processed += 1;
         } catch (err) {
           this.logger.warn(
@@ -124,7 +126,20 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
     this.logger.debug('키워드 인사이트 캐시 무효화');
   }
 
-  private async analyzeAndSaveOne(keyword: RankedKeyword): Promise<void> {
+  private getKstDateString(date: Date = new Date()): string {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(date);
+    const year = parts.find((p) => p.type === 'year')?.value ?? '';
+    const month = parts.find((p) => p.type === 'month')?.value ?? '';
+    const day = parts.find((p) => p.type === 'day')?.value ?? '';
+    return `${year}-${month}-${day}`;
+  }
+
+  private async analyzeAndSaveOne(keyword: RankedKeyword, analysisDate: string): Promise<void> {
     const articles = await this.articleKeywordRepository.getTopArticleBodiesByKeyword({
       keywordId: keyword.id,
       hoursInterval: 24,
@@ -134,6 +149,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
     if (articles.length === 0) {
       await this.keywordInsightRepository.save({
         keywordId: keyword.id,
+        analysisDate,
         summary: '[관련 기사 없음]',
         articleIds: [],
         analyzedAt: new Date(),
@@ -148,6 +164,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
     const articleIds = articles.map((a) => a.id);
     await this.keywordInsightRepository.save({
       keywordId: keyword.id,
+      analysisDate,
       summary,
       articleIds,
       analyzedAt: new Date(),
