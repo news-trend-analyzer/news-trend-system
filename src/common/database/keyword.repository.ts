@@ -236,7 +236,7 @@ LIMIT $2;
         kt.keyword_id,
         SUM(kt.score_sum)::float8 AS score_recent
       FROM keyword_timeseries kt
-      WHERE kt.bucket_time >= NOW() - INTERVAL '1 hour'
+      WHERE kt.bucket_time >= NOW() - INTERVAL '2 hour'
       GROUP BY kt.keyword_id
     ),
     -- 직전 1시간 (1~2시간 전): 비교 대상 데이터
@@ -245,8 +245,8 @@ LIMIT $2;
         kt.keyword_id,
         SUM(kt.score_sum)::float8 AS score_prev
       FROM keyword_timeseries kt
-      WHERE kt.bucket_time >= NOW() - INTERVAL '2 hours'
-        AND kt.bucket_time < NOW() - INTERVAL '1 hour'
+      WHERE kt.bucket_time >= NOW() - INTERVAL '3 hours'
+        AND kt.bucket_time < NOW() - INTERVAL '2 hour'
       GROUP BY kt.keyword_id
     ),
     -- 최근 24시간: 키워드의 기초 체력 (신뢰도 확인용)
