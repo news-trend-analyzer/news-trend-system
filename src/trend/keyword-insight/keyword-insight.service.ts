@@ -16,7 +16,7 @@ import type { RankedKeyword } from '../../common/types/top-keyword.type';
 const TOP_KEYWORDS_LIMIT = 20;
 const ARTICLES_PER_KEYWORD = 5;
 const MAX_CHARS_PER_ARTICLE = 1500;
-const CRON_EXPRESSION = '0 */10 * * * *'; // 10분마다
+const CRON_EXPRESSION = '0 */5 * * * *'; // 5분마다
 const CACHE_KEY = 'trend:keyword-insight:top';
 const CACHE_MAX_LIMIT = 50;
 
