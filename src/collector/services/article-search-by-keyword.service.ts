@@ -30,8 +30,9 @@ const PREWARM_KEYWORD_LIMIT = 20;
  * DB max_connections·풀 설정을 올렸다면 24~32까지도 시험 가능.
  */
 const PREWARM_CONCURRENCY = 16;
-const PREWARM_PAGE = 1;
 const PREWARM_HOURS_INTERVAL = 24;
+/** page도 캐시 키에 포함됨. 앞쪽 페이지만 워밍(이후는 첫 요청 시 DB 후 캐시). 더 필요하면 늘리기. */
+const PREWARM_PAGES = [1, 2, 3, 4, 5] as const;
 /**
  * 클라가 쓰는 size마다 키가 갈라짐. 프로덕션(예: size=5) + API 기본(미지정→20) 둘 다 워밍.
  */
@@ -168,33 +169,44 @@ export class ArticleSearchByKeywordService
     for (const kw of top24h) {
       pushId(Number(kw.id));
     }
-    const keysWarmed = new Set<string>();
-    const prewarmOne = async (keywordId: number): Promise<void> => {
-      for (const pageSize of PREWARM_PAGE_SIZES) {
-        const normalized = this.normalizeParams({
-          keywordId,
-          page: PREWARM_PAGE,
-          size: pageSize,
-          hoursInterval: PREWARM_HOURS_INTERVAL,
-        });
-        const key = this.buildCacheKey(normalized);
-        if (keysWarmed.has(key)) {
-          continue;
-        }
-        keysWarmed.add(key);
-        try {
-          await this.doComputeAndStoreArticlesByKeyword(key, normalized);
-        } catch (err) {
-          this.logger.warn(
-            `키워드 기사 캐시 프리워밍 실패 keywordId=${keywordId} size=${pageSize}`,
-            err instanceof Error ? err.message : String(err),
-          );
+    type PrewarmTask = {
+      readonly keywordId: number;
+      readonly page: number;
+      readonly size: number;
+    };
+    const tasks: PrewarmTask[] = [];
+    for (const keywordId of orderedIds) {
+      for (const page of PREWARM_PAGES) {
+        for (const size of PREWARM_PAGE_SIZES) {
+          tasks.push({ keywordId, page, size });
         }
       }
+    }
+    const keysWarmed = new Set<string>();
+    const runPrewarmTask = async (task: PrewarmTask): Promise<void> => {
+      const normalized = this.normalizeParams({
+        keywordId: task.keywordId,
+        page: task.page,
+        size: task.size,
+        hoursInterval: PREWARM_HOURS_INTERVAL,
+      });
+      const key = this.buildCacheKey(normalized);
+      if (keysWarmed.has(key)) {
+        return;
+      }
+      keysWarmed.add(key);
+      try {
+        await this.doComputeAndStoreArticlesByKeyword(key, normalized);
+      } catch (err) {
+        this.logger.warn(
+          `키워드 기사 캐시 프리워밍 실패 keywordId=${task.keywordId} page=${task.page} size=${task.size}`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
     };
-    for (let i = 0; i < orderedIds.length; i += PREWARM_CONCURRENCY) {
-      const chunk = orderedIds.slice(i, i + PREWARM_CONCURRENCY);
-      await Promise.all(chunk.map((id) => prewarmOne(id)));
+    for (let i = 0; i < tasks.length; i += PREWARM_CONCURRENCY) {
+      const chunk = tasks.slice(i, i + PREWARM_CONCURRENCY);
+      await Promise.all(chunk.map((t) => runPrewarmTask(t)));
     }
   }
 
