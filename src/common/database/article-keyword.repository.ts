@@ -198,7 +198,7 @@ export class ArticleKeywordRepository {
     JOIN articles a ON a.id = ak.article_id
     WHERE (k.normalized_text = $1 OR k.display_text = $1)
       AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
-    ORDER BY ak.weight DESC
+    ORDER BY ak.weight DESC, a.published_at DESC
     LIMIT $3 OFFSET $4
     `;
     const rows = await this.dataSource.query(dataQuery, [
@@ -314,7 +314,7 @@ export class ArticleKeywordRepository {
     FROM ranked r
     JOIN articles a ON a.id = r.article_id
     WHERE r.rn = 1
-    ORDER BY r.match_rank, r.weight DESC, r.match_rate DESC
+    ORDER BY r.match_rank, r.weight DESC, r.match_rate DESC, a.published_at DESC
     LIMIT $5 OFFSET $6
     `;
     const rows = await this.dataSource.query(dataQuery, [
