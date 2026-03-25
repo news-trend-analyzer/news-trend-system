@@ -17,12 +17,19 @@ export type ArticleByKeywordItem = {
   readonly weight: number;
 };
 
-export type SearchArticlesByKeywordParams = {
-  readonly keyword: string;
-  readonly hoursInterval?: number;
-  readonly page?: number;
-  readonly size?: number;
-};
+export type SearchArticlesByKeywordParams =
+  | {
+      readonly keywordId: number;
+      readonly hoursInterval?: number;
+      readonly page?: number;
+      readonly size?: number;
+    }
+  | {
+      readonly keyword: string;
+      readonly hoursInterval?: number;
+      readonly page?: number;
+      readonly size?: number;
+    };
 
 export type SearchArticlesByKeywordResult = {
   readonly total: number;
@@ -137,6 +144,16 @@ export class ArticleKeywordRepository {
     const size = Math.min(Math.max(params.size ?? 20, 1), 50);
     const page = Math.max(params.page ?? 1, 1);
     const from = (page - 1) * size;
+    if ('keywordId' in params) {
+      const keywordId = Math.floor(params.keywordId);
+      return this.searchArticlesByKeywordId(
+        keywordId,
+        hoursInterval,
+        size,
+        page,
+        from,
+      );
+    }
     const keyword = params.keyword.trim();
     const parts = this.splitKeywordParts(keyword);
     const hasComposite = parts.length >= 2;
@@ -151,6 +168,63 @@ export class ArticleKeywordRepository {
       page,
       from,
     );
+  }
+
+  /**
+   * 키워드 PK 기준 기사 검색 (텍스트/복합 분기 없음)
+   */
+  private async searchArticlesByKeywordId(
+    keywordId: number,
+    hoursInterval: number,
+    size: number,
+    page: number,
+    from: number,
+  ): Promise<SearchArticlesByKeywordResult> {
+    const countQuery = `
+    SELECT COUNT(DISTINCT a.id) AS total
+    FROM article_keywords ak
+    JOIN articles a ON a.id = ak.article_id
+    WHERE ak.keyword_id = $1
+      AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
+    `;
+    const countResult = await this.dataSource.query(countQuery, [
+      keywordId,
+      hoursInterval,
+    ]);
+    const total = Number.parseInt(countResult[0]?.total ?? '0', 10);
+    const totalPages = Math.ceil(total / size);
+    const dataQuery = `
+    SELECT
+      a.title,
+      a.body_text,
+      a.publisher,
+      a.category,
+      a.url,
+      a.published_at,
+      ak.weight
+    FROM article_keywords ak
+    JOIN articles a ON a.id = ak.article_id
+    WHERE ak.keyword_id = $1
+      AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
+    ORDER BY a.published_at DESC, ak.weight DESC
+    LIMIT $3 OFFSET $4
+    `;
+    const rows = await this.dataSource.query(dataQuery, [
+      keywordId,
+      hoursInterval,
+      size,
+      from,
+    ]);
+    const items = this.mapRowsToItems(rows);
+    return {
+      total,
+      items,
+      page,
+      size,
+      totalPages,
+      hasNext: page < totalPages,
+      hasPrev: page > 1,
+    };
   }
 
   /**

@@ -717,6 +717,15 @@ LIMIT $2;
   }
 
   /**
+   * 기사-by-keyword Redis 캐시 키용 정규화 (단일 키워드).
+   * display_text·normalized_text·대소문자만 다른 입력이 동일 키가 되도록 함.
+   * @param keyword - 검색에 사용한 원문(트림 전 가능)
+   */
+  normalizeKeywordForCache(keyword: string): string {
+    return this.normalizeKeyword(keyword);
+  }
+
+  /**
    * 키워드 정규화 (노이즈 제거 및 정규화)
    * 복합키의 경우 정렬 후 조인하여 canonical form 생성
    * @param keyword - 원본 키워드

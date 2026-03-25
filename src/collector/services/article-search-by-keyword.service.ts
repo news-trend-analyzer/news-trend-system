@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   Logger,
   OnModuleDestroy,
@@ -28,6 +29,15 @@ const PREWARM_DEFAULT_PARAMS = {
   size: 20,
   hoursInterval: 24,
 } as const;
+
+/** 컨트롤러·DTO에서 들어오는 원시 쿼리 */
+type ArticleSearchByKeywordQuery = {
+  readonly keyword?: string;
+  readonly keywordId?: number;
+  readonly hoursInterval?: number;
+  readonly page?: number;
+  readonly size?: number;
+};
 
 @Injectable()
 export class ArticleSearchByKeywordService
@@ -80,9 +90,9 @@ export class ArticleSearchByKeywordService
   }
 
   async searchArticlesByKeyword(
-    params: SearchArticlesByKeywordParams,
+    query: ArticleSearchByKeywordQuery,
   ): Promise<SearchArticlesByKeywordResult> {
-    const normalized = this.normalizeParams(params);
+    const normalized = this.normalizeParams(query);
     const key = this.buildCacheKey(normalized);
     try {
       const cached = await this.redis.get(key);
@@ -132,9 +142,9 @@ export class ArticleSearchByKeywordService
       this.keywordRepository.findTopKeywords24h(PREWARM_KEYWORD_LIMIT),
     ]);
     const keysWarmed = new Set<string>();
-    const prewarmLabel = async (label: string): Promise<void> => {
+    const prewarmOne = async (keywordId: number): Promise<void> => {
       const normalized = this.normalizeParams({
-        keyword: label,
+        keywordId,
         page: PREWARM_DEFAULT_PARAMS.page,
         size: PREWARM_DEFAULT_PARAMS.size,
         hoursInterval: PREWARM_DEFAULT_PARAMS.hoursInterval,
@@ -148,47 +158,73 @@ export class ArticleSearchByKeywordService
         await this.doComputeAndStoreArticlesByKeyword(key, normalized);
       } catch (err) {
         this.logger.warn(
-          `키워드 기사 캐시 프리워밍 실패: ${label}`,
+          `키워드 기사 캐시 프리워밍 실패 keywordId=${keywordId}`,
           err instanceof Error ? err.message : String(err),
         );
       }
     };
     for (const kw of realtime) {
-      await prewarmLabel(kw.displayText?.trim() || kw.normalizedText);
+      await prewarmOne(Number(kw.id));
     }
     for (const kw of top24h) {
-      await prewarmLabel(kw.displayText?.trim() || kw.normalizedText);
+      await prewarmOne(Number(kw.id));
     }
   }
 
-  private normalizeParams(
-    params: SearchArticlesByKeywordParams,
-  ): SearchArticlesByKeywordParams {
-    const hoursInterval = params.hoursInterval ?? 24;
-    const size = Math.min(Math.max(params.size ?? 20, 1), 50);
-    const page = Math.max(params.page ?? 1, 1);
-    return {
-      keyword: params.keyword.trim(),
-      hoursInterval,
-      size,
-      page,
-    };
+  private normalizeParams(query: ArticleSearchByKeywordQuery): SearchArticlesByKeywordParams {
+    const hoursInterval = query.hoursInterval ?? 24;
+    const size = Math.min(Math.max(query.size ?? 20, 1), 50);
+    const page = Math.max(query.page ?? 1, 1);
+    const rawId = query.keywordId;
+    if (rawId != null && Number.isFinite(rawId)) {
+      const keywordId = Math.floor(Number(rawId));
+      if (keywordId >= 1) {
+        return { keywordId, hoursInterval, size, page };
+      }
+    }
+    const kw = query.keyword?.trim() ?? '';
+    if (kw.length > 0) {
+      return { keyword: kw, hoursInterval, size, page };
+    }
+    throw new BadRequestException('keyword 또는 keywordId 중 하나는 필요합니다.');
   }
 
   private buildCacheKey(params: SearchArticlesByKeywordParams): string {
+    const parts: unknown[] =
+      'keywordId' in params
+        ? ['id', params.keywordId, params.page, params.size, params.hoursInterval]
+        : [
+            'text',
+            this.resolveKeywordForCacheKey(params.keyword),
+            params.page,
+            params.size,
+            params.hoursInterval,
+          ];
     const hash = crypto
       .createHash('sha256')
-      .update(
-        JSON.stringify([
-          params.keyword,
-          params.page,
-          params.size,
-          params.hoursInterval,
-        ]),
-      )
+      .update(JSON.stringify(parts))
       .digest('hex')
       .slice(0, 32);
     return `${CACHE_KEY_PREFIX}:${hash}`;
+  }
+
+  /**
+   * 텍스트 검색 전용: 표시/정규화 문자열이 달라도 동일 캐시(복합 키는 원문 유지)
+   */
+  private resolveKeywordForCacheKey(keyword: string): string {
+    if (this.isCompositeKeywordInput(keyword)) {
+      return keyword;
+    }
+    const canonical = this.keywordRepository.normalizeKeywordForCache(keyword);
+    return canonical.length > 0 ? canonical : keyword;
+  }
+
+  private isCompositeKeywordInput(keyword: string): boolean {
+    const parts = keyword
+      .split(':')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    return parts.length >= 2;
   }
 
   private deserializeResult(cached: string): SearchArticlesByKeywordResult {

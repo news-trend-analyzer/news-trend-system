@@ -47,6 +47,7 @@ export class ArticleSearchController {
   async searchArticlesByKeyword(@Query() queryParams: SearchArticlesByKeywordDto) {
     return this.articleSearchByKeywordService.searchArticlesByKeyword({
       keyword: queryParams.keyword,
+      keywordId: queryParams.keywordId,
       page: queryParams.page,
       size: queryParams.size,
       hoursInterval: queryParams.hoursInterval,
