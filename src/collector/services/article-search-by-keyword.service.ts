@@ -23,7 +23,10 @@ const ARTICLES_BY_KEYWORD_CRON =
   `*/${ARTICLES_BY_KEYWORD_REFRESH_SECONDS} * * * * *` as const;
 /** Redis 키 만료(초). 프리워밍이 없는 조합은 이 시간 동안 히트 */
 const CACHE_TTL_SECONDS = 300;
+/** 트렌드 /trend/realtime 기본 limit(20)과 맞춤 */
 const PREWARM_KEYWORD_LIMIT = 20;
+/** 동시 DB 조회 수 (연속 await 제거로 기동·크론 주기 내 프리워밍 완료 시간 단축) */
+const PREWARM_CONCURRENCY = 8;
 const PREWARM_DEFAULT_PARAMS = {
   page: 1,
   size: 20,
@@ -49,6 +52,7 @@ export class ArticleSearchByKeywordService
     string,
     Promise<SearchArticlesByKeywordResult>
   >();
+  private prewarmAllInFlight: Promise<void> | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -132,10 +136,34 @@ export class ArticleSearchByKeywordService
   }
 
   private async prewarmTopKeywordArticleCaches(): Promise<void> {
+    if (this.prewarmAllInFlight) {
+      return this.prewarmAllInFlight;
+    }
+    this.prewarmAllInFlight = this.runPrewarmTopKeywordArticleCaches().finally(() => {
+      this.prewarmAllInFlight = null;
+    });
+    return this.prewarmAllInFlight;
+  }
+
+  private async runPrewarmTopKeywordArticleCaches(): Promise<void> {
     const [realtime, top24h] = await Promise.all([
       this.keywordRepository.findTopKeywordsRealtime(PREWARM_KEYWORD_LIMIT),
       this.keywordRepository.findTopKeywords24h(PREWARM_KEYWORD_LIMIT),
     ]);
+    const orderedIds: number[] = [];
+    const seenId = new Set<number>();
+    const pushId = (id: number): void => {
+      if (!seenId.has(id)) {
+        seenId.add(id);
+        orderedIds.push(id);
+      }
+    };
+    for (const kw of realtime) {
+      pushId(Number(kw.id));
+    }
+    for (const kw of top24h) {
+      pushId(Number(kw.id));
+    }
     const keysWarmed = new Set<string>();
     const prewarmOne = async (keywordId: number): Promise<void> => {
       const normalized = this.normalizeParams({
@@ -158,11 +186,9 @@ export class ArticleSearchByKeywordService
         );
       }
     };
-    for (const kw of realtime) {
-      await prewarmOne(Number(kw.id));
-    }
-    for (const kw of top24h) {
-      await prewarmOne(Number(kw.id));
+    for (let i = 0; i < orderedIds.length; i += PREWARM_CONCURRENCY) {
+      const chunk = orderedIds.slice(i, i + PREWARM_CONCURRENCY);
+      await Promise.all(chunk.map((id) => prewarmOne(id)));
     }
   }
 
