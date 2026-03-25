@@ -16,11 +16,12 @@ import {
 } from '../../common/database/article-keyword.repository';
 
 const CACHE_KEY_PREFIX = 'articles:by-keyword:v1';
-/** DB→Redis 갱신 주기(초). @Cron 과 TTL과 함께 유지 */
+/** 상위 키워드 Redis 프리워밍 주기(초). @Cron 표현식과 맞출 것 */
 const ARTICLES_BY_KEYWORD_REFRESH_SECONDS = 30;
 const ARTICLES_BY_KEYWORD_CRON =
   `*/${ARTICLES_BY_KEYWORD_REFRESH_SECONDS} * * * * *` as const;
-const CACHE_TTL_SECONDS = ARTICLES_BY_KEYWORD_REFRESH_SECONDS * 3;
+/** Redis 키 만료(초). 프리워밍이 없는 조합은 이 시간 동안 히트 */
+const CACHE_TTL_SECONDS = 300;
 const PREWARM_KEYWORD_LIMIT = 20;
 const PREWARM_DEFAULT_PARAMS = {
   page: 1,
