@@ -127,88 +127,92 @@ export class KeywordRepository {
     similarityPoolLimit: number = 500,
   ): Promise<RankedKeyword[]> {
     const query = `
-  WITH scored_all AS (
-    SELECT
-      k.id,
-      k.normalized_text,
-      k.display_text,
-      SPLIT_PART(k.normalized_text, ':', 1) AS t1,
-      SPLIT_PART(k.normalized_text, ':', 2) AS t2,
-      SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END)::float8 AS score_24h,
-      (
-        SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END) * 1.5
-        + SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '2 hours' THEN kt.score_sum ELSE 0 END) * 0.2
-      )::float8 AS final_score
-    FROM keywords k
-    JOIN keyword_timeseries kt ON k.id = kt.keyword_id
-    WHERE k.type = 'COMPOSITE'
-      AND kt.bucket_time >= NOW() - INTERVAL '24 hours'
-    GROUP BY k.id, k.normalized_text, k.display_text
-    HAVING SUM(kt.score_sum) > 0
-  ),
-  scored AS (
-    SELECT * FROM scored_all
-    ORDER BY final_score DESC
-    LIMIT $1
-  ),
-  active_buckets AS (
-    SELECT s.id, kt.bucket_time
-    FROM scored s
-    JOIN keywords k ON (k.normalized_text = s.t1 OR k.normalized_text = s.t2) AND k.type = 'SINGLE'
-    JOIN keyword_timeseries kt ON kt.keyword_id = k.id
-    WHERE kt.bucket_time >= NOW() - INTERVAL '24 hours'
-      AND kt.score_sum > 0
-    GROUP BY s.id, kt.bucket_time
-  ),
-  bucket_counts AS (
-    SELECT id, COUNT(*)::int AS cnt FROM active_buckets GROUP BY id
-  ),
-  similarity AS (
-    SELECT
-      s1.id AS low_id,
-      s2.id AS high_id,
-      COUNT(DISTINCT b1.bucket_time) AS shared_cnt,
-      bc1.cnt AS bc1_cnt,
-      bc2.cnt AS bc2_cnt
-    FROM scored s1
-    JOIN scored s2
-      ON s1.id != s2.id
-      AND (s1.t1 IN (s2.t1, s2.t2) OR s1.t2 IN (s2.t1, s2.t2))
-      AND s2.final_score > s1.final_score
-    JOIN active_buckets b1 ON b1.id = s1.id
-    JOIN active_buckets b2 ON b2.id = s2.id AND b1.bucket_time = b2.bucket_time
-    JOIN bucket_counts bc1 ON bc1.id = s1.id
-    JOIN bucket_counts bc2 ON bc2.id = s2.id
-    GROUP BY s1.id, s2.id, bc1.cnt, bc2.cnt
-    HAVING COUNT(DISTINCT b1.bucket_time)::float8
-      / NULLIF(GREATEST(bc1.cnt + bc2.cnt - COUNT(DISTINCT b1.bucket_time), 1), 0) >= 0.35
-  ),
-  sub_map AS (
-    SELECT DISTINCT ON (low_id)
-      low_id AS sub_id,
-      high_id AS main_id
-    FROM similarity
-    ORDER BY low_id, shared_cnt DESC
-  ),
-  group_stats AS (
-    SELECT
-      COALESCE(m.main_id, sa.id) AS rep_id,
-      SUM(sa.final_score)::float8 AS total_group_score,
-      SUM(sa.score_24h)::float8 AS total_group_score24h
-    FROM scored_all sa
-    LEFT JOIN sub_map m ON sa.id = m.sub_id
-    GROUP BY 1
-  )
+WITH scored_all AS (
   SELECT
-    s.id AS "id",
-    s.normalized_text AS "normalizedText",
-    s.display_text AS "displayText",
-    gs.total_group_score24h AS "score24h"
-  FROM scored_all s
-  JOIN group_stats gs ON s.id = gs.rep_id
-  WHERE NOT EXISTS (SELECT 1 FROM sub_map sm WHERE sm.sub_id = s.id)
-  ORDER BY gs.total_group_score DESC
-  LIMIT $2;
+    k.id,
+    k.normalized_text,
+    k.display_text,
+    SPLIT_PART(k.normalized_text, ':', 1) AS t1,
+    SPLIT_PART(k.normalized_text, ':', 2) AS t2,
+    SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END)::float8 AS score_24h,
+    (
+      SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END) * 1.5
+      + SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '2 hours' THEN kt.score_sum ELSE 0 END) * 0.2
+    )::float8
+    * (1.0 - 0.4 * (
+        SUM(CASE WHEN kt.bucket_time::date < NOW()::date THEN kt.score_sum ELSE 0 END)
+        / NULLIF(SUM(CASE WHEN kt.bucket_time >= NOW() - INTERVAL '24 hours' THEN kt.score_sum ELSE 0 END), 0)
+      ))::float8 AS final_score
+  FROM keywords k
+  JOIN keyword_timeseries kt ON k.id = kt.keyword_id
+  WHERE k.type = 'COMPOSITE'
+    AND kt.bucket_time >= NOW() - INTERVAL '24 hours'
+  GROUP BY k.id, k.normalized_text, k.display_text
+  HAVING SUM(kt.score_sum) > 0
+),
+scored AS (
+  SELECT * FROM scored_all
+  ORDER BY final_score DESC
+  LIMIT $1
+),
+active_buckets AS (
+  SELECT s.id, kt.bucket_time
+  FROM scored s
+  JOIN keywords k ON (k.normalized_text = s.t1 OR k.normalized_text = s.t2) AND k.type = 'SINGLE'
+  JOIN keyword_timeseries kt ON kt.keyword_id = k.id
+  WHERE kt.bucket_time >= NOW() - INTERVAL '24 hours'
+    AND kt.score_sum > 0
+  GROUP BY s.id, kt.bucket_time
+),
+bucket_counts AS (
+  SELECT id, COUNT(*)::int AS cnt FROM active_buckets GROUP BY id
+),
+similarity AS (
+  SELECT
+    s1.id AS low_id,
+    s2.id AS high_id,
+    COUNT(DISTINCT b1.bucket_time) AS shared_cnt,
+    bc1.cnt AS bc1_cnt,
+    bc2.cnt AS bc2_cnt
+  FROM scored s1
+  JOIN scored s2
+    ON s1.id != s2.id
+    AND (s1.t1 IN (s2.t1, s2.t2) OR s1.t2 IN (s2.t1, s2.t2))
+    AND s2.final_score > s1.final_score
+  JOIN active_buckets b1 ON b1.id = s1.id
+  JOIN active_buckets b2 ON b2.id = s2.id AND b1.bucket_time = b2.bucket_time
+  JOIN bucket_counts bc1 ON bc1.id = s1.id
+  JOIN bucket_counts bc2 ON bc2.id = s2.id
+  GROUP BY s1.id, s2.id, bc1.cnt, bc2.cnt
+  HAVING COUNT(DISTINCT b1.bucket_time)::float8
+    / NULLIF(GREATEST(bc1.cnt + bc2.cnt - COUNT(DISTINCT b1.bucket_time), 1), 0) >= 0.35
+),
+sub_map AS (
+  SELECT DISTINCT ON (low_id)
+    low_id AS sub_id,
+    high_id AS main_id
+  FROM similarity
+  ORDER BY low_id, shared_cnt DESC
+),
+group_stats AS (
+  SELECT
+    COALESCE(m.main_id, sa.id) AS rep_id,
+    SUM(sa.final_score)::float8 AS total_group_score,
+    SUM(sa.score_24h)::float8 AS total_group_score24h
+  FROM scored_all sa
+  LEFT JOIN sub_map m ON sa.id = m.sub_id
+  GROUP BY 1
+)
+SELECT
+  s.id AS "id",
+  s.normalized_text AS "normalizedText",
+  s.display_text AS "displayText",
+  gs.total_group_score24h AS "score24h"
+FROM scored_all s
+JOIN group_stats gs ON s.id = gs.rep_id
+WHERE NOT EXISTS (SELECT 1 FROM sub_map sm WHERE sm.sub_id = s.id)
+ORDER BY gs.total_group_score DESC
+LIMIT $2;
     `;
 
     const result = await this.dataSource.query(query, [similarityPoolLimit, resultLimit]);
