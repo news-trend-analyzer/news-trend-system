@@ -51,7 +51,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit(): void {
     this.logger.log('KeywordInsightService Redis 연결됨');
-    void this.processNewKeywords().catch((err) =>
+    void this.runScheduledInsight().catch((err) =>
       this.logger.error(
         '키워드 인사이트 초기 실행 실패',
         err instanceof Error ? err.stack : String(err),

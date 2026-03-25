@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'fs';
@@ -10,7 +10,7 @@ import { ScraperService } from './scraper.service';
  * 수집 및 스크래핑 스케줄러 서비스
  */
 @Injectable()
-export class SchedulerService {
+export class SchedulerService implements OnModuleInit {
   private readonly logger = new Logger(SchedulerService.name);
   private isScraping = false;
   private readonly articlesFilePath: string;
@@ -21,6 +21,19 @@ export class SchedulerService {
     private readonly configService: ConfigService,
   ) {
     this.articlesFilePath = this.resolveArticlesFilePath();
+  }
+
+  /**
+   * 기동 직후 크론 대기 없이 RSS→스크래핑 1회 (이후 @Cron 주기 유지)
+   */
+  onModuleInit(): void {
+    this.logger.log('기동 직후 RSS 수집·스크래핑 1회 실행');
+    void this.collectRSS().catch((err) =>
+      this.logger.error(
+        '기동 직후 RSS 수집 실패',
+        err instanceof Error ? err.stack : String(err),
+      ),
+    );
   }
 
   /**

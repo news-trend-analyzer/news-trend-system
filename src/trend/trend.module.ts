@@ -1,6 +1,5 @@
 import { BullModule } from '@nestjs/bullmq';
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { MessageQueueModule } from '../common/message-queue/message-queue.module';
 import { TrendAnalysisService } from './trend.service';
 import { TrendController } from './trend.controller';
@@ -11,7 +10,6 @@ import { KeywordInsightModule } from './keyword-insight/keyword-insight.module';
 
 @Module({
   imports: [
-    ScheduleModule.forRoot(),
     MessageQueueModule,
     BullModule.registerQueue({
       name: 'articles',

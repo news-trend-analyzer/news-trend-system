@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
 import { TrendModule } from './trend.module';
 import { ConfigModule } from '../common/config/config.module';
 import { ConfigService } from '@nestjs/config';
@@ -13,6 +14,7 @@ import { HealthController } from './health.controller';
 @Module({
   imports: [
     ConfigModule,
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
        useFactory: (configService: ConfigService) => {

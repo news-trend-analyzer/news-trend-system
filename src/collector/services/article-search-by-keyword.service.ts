@@ -64,12 +64,7 @@ export class ArticleSearchByKeywordService
   }
 
   onModuleInit(): void {
-    void this.prewarmTopKeywordArticleCaches().catch((err) =>
-      this.logger.error(
-        '초기 키워드 기사 캐시 프리워밍 실패',
-        err instanceof Error ? err.stack : String(err),
-      ),
-    );
+    this.handleArticlesByKeywordCacheRefreshCron();
   }
 
   onModuleDestroy(): void {
@@ -82,9 +77,9 @@ export class ArticleSearchByKeywordService
   @Cron(ARTICLES_BY_KEYWORD_CRON)
   handleArticlesByKeywordCacheRefreshCron(): void {
     void this.prewarmTopKeywordArticleCaches().catch((err) =>
-      this.logger.warn(
+      this.logger.error(
         '키워드 기사 캐시 프리워밍 실패',
-        err instanceof Error ? err.message : String(err),
+        err instanceof Error ? err.stack : String(err),
       ),
     );
   }

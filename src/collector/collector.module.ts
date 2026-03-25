@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { CollectorController } from './controllers/collector.controller';
 import { CollectorService } from './services/collector.service';
 import { MessageQueueModule } from '../common/message-queue/message-queue.module';
@@ -16,7 +15,6 @@ import { DatabaseModule } from '../common/database/database.module';
 @Module({
   imports: [
     MessageQueueModule,
-    ScheduleModule.forRoot(),
     ElasticsearchModule,
     DatabaseModule,
   ],

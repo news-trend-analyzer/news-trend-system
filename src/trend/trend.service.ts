@@ -134,12 +134,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     });
     this.logger.log('트렌드 분석 Worker가 시작되었습니다.');
 
-    void this.runTopTrendsRefresh().catch((err) =>
-      this.logger.error(
-        '초기 24h 상위 트렌드 캐시 실패',
-        err instanceof Error ? err.stack : String(err),
-      ),
-    );
+    this.handleTopTrendsRefreshCron();
 
     // 30초마다 남은 키워드 배치 flush (트래픽이 적어도 DB 누적 저장되도록)
     this.keywordFlushIntervalId = setInterval(() => {
