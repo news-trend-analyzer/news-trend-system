@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
-import type { ArticleForInsight } from './llm.interface';
+import type { ArticleForInsight, LlmKeywordBriefing } from './llm.interface';
 import type { LlmService } from './llm.interface';
 
 const SYSTEM_PROMPT = `당신은 방대한 데이터를 관통하는 핵심 맥락을 짚어내는 '뉴스 트렌드 분석 전문가'입니다. 단순 요약을 넘어, 해당 키워드가 왜 현재 시점에서 폭발적인 화제성을 갖게 되었는지 그 결정적 계기와 파급 효과를 연결하여 설명합니다.
@@ -26,9 +26,6 @@ const QUERY_SYSTEM_PROMPT = `당신은 뉴스 트렌드 랭킹의 이슈 제목 
 - title은 짧은 문장이 아니라 제목형 명사구로 끝내세요. "논란", "하락", "확정", "과열", "압박", "급락", "반등", "유치전", "투자전"처럼 제목형 단어로 마무리하세요.
 - title에는 기사의 핵심 사건을 포함하되 과장하거나 추측하지 마세요.
 - title은 수식어보다 사건 동사/상태를 우선합니다. 예: 흔들린다, 맞붙다, 불붙다, 커진다, 제동, 급락, 반등, 논란, 압박, 확정.
-- searchQuery는 뉴스 검색에 바로 넣을 짧은 검색어입니다. searchQuery는 딱딱해도 됩니다.
-- searchQuery는 16자 이내, 2~5개 단어로 작성하세요.
-- title과 searchQuery를 똑같이 만들지 마세요. title은 읽히는 문구, searchQuery는 검색어입니다.
 - title에는 쉼표, 말줄임표, 따옴표, 느낌표를 쓰지 마세요.
 - title은 "~했다", "~한다", "~됐다", "~된다", "~이다"로 끝내지 마세요.
 - 수치, 상태, 원인 중 핵심 단서 1개만 남기고 여러 맥락을 동시에 붙이지 마세요.
@@ -36,6 +33,22 @@ const QUERY_SYSTEM_PROMPT = `당신은 뉴스 트렌드 랭킹의 이슈 제목 
 - 기사에 근거가 부족하면 과장하지 말고 가장 구체적인 공통 맥락을 사용하세요.
 - 나쁜 title 예: "대통령 지지율", "홍명보 월드컵", "호남 반도체 클러스터", "최태원 AI 데이터센터"
 - 좋은 title 예: "지지율 6주 하락", "홍명보 퇴장 논란", "호남 반도체 유치전", "AI센터 투자 경쟁"`;
+
+const BRIEFING_SYSTEM_PROMPT = `당신은 사용자가 뉴스 트렌드 상세 화면에 오래 머물도록 돕는 브리핑 에디터입니다. 관련 기사에 근거해 "왜 이 키워드가 지금 뜨는지"를 읽기 쉬운 구조로 설명합니다.
+
+작성 규칙:
+- 반드시 JSON 객체만 반환하세요.
+- 키는 oneLineSummary, whySteps, questions만 사용하세요.
+- oneLineSummary는 1문장으로, 사용자가 바로 맥락을 잡게 쓰세요.
+- whySteps는 카드에 표시될 짧은 단계 문구입니다.
+- whySteps는 3~5개 항목으로, 각 항목은 10~20자 이내의 짧은 명사형 표현으로 쓰세요.
+- whySteps는 사건의 발단 -> 보도 확산 -> 관심 증가 흐름이 보이게 순서대로 작성하세요.
+- whySteps는 문장으로 쓰지 말고, 마침표를 붙이지 마세요.
+- 좋은 whySteps 예: "조별리그 탈락", "감독 사퇴 발표", "책임론 재점화", "검색 관심 증가"
+- questions는 사용자가 실제로 궁금해할 질문 3~5개와 답변입니다.
+- questions.answer는 2~3문장으로 충분히 자세히 쓰되, 기사에 없는 내용을 추측하지 마세요.
+- 과장된 전망, 투자 조언, 정치적 평가처럼 근거 밖의 판단은 피하세요.
+- 마크다운, 불릿 기호, 번호 문자열은 쓰지 마세요.`;
 
 type TrendKeywordQueryResult = {
   title: string;
@@ -127,6 +140,43 @@ export class OpenAILlmService implements LlmService {
     }
   }
 
+  async generateKeywordBriefing(params: {
+    keyword: string;
+    summary: string;
+    articleSummaries: readonly ArticleForInsight[];
+  }): Promise<LlmKeywordBriefing> {
+    if (!this.client) {
+      return this.buildFallbackBriefing(params.keyword, params.summary);
+    }
+    const articlesText = params.articleSummaries
+      .map(
+        (a, i) =>
+          `[기사 ${i + 1}] ${a.title} (${a.publisher})\n${a.bodySnippet}`,
+      )
+      .join('\n\n');
+    const userPrompt = `키워드: "${params.keyword}"\n기존 요약: ${params.summary}\n\n아래 기사들을 참고해 상세 브리핑을 만들어주세요.\n\n${articlesText}`;
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      messages: [
+        { role: 'system', content: BRIEFING_SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      max_completion_tokens: 900,
+      temperature: 0.25,
+      response_format: { type: 'json_object' },
+    });
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      return this.buildFallbackBriefing(params.keyword, params.summary);
+    }
+    try {
+      const parsed = JSON.parse(content) as Partial<LlmKeywordBriefing>;
+      return this.normalizeBriefing(parsed, params.keyword, params.summary);
+    } catch {
+      return this.buildFallbackBriefing(params.keyword, params.summary);
+    }
+  }
+
   isEnabled(): boolean {
     return this.enabled;
   }
@@ -162,6 +212,61 @@ export class OpenAILlmService implements LlmService {
       title: query,
       searchQuery: query,
       intentSummary: 'LLM 검색어 생성이 비활성화되어 원본 키워드를 사용합니다.',
+    };
+  }
+
+  private normalizeBriefing(
+    parsed: Partial<LlmKeywordBriefing>,
+    keyword: string,
+    summary: string,
+  ): LlmKeywordBriefing {
+    const fallback = this.buildFallbackBriefing(keyword, summary);
+    const questions = Array.isArray(parsed.questions)
+      ? parsed.questions
+          .map((q) => ({
+            question: this.cleanText(q?.question, 80),
+            answer: this.cleanText(q?.answer, 500),
+          }))
+          .filter((q) => q.question.length > 0 && q.answer.length > 0)
+          .slice(0, 5)
+      : [];
+    const whySteps = Array.isArray(parsed.whySteps)
+      ? parsed.whySteps
+          .map((step) => this.cleanText(step, 20))
+          .filter(Boolean)
+          .slice(0, 5)
+      : [];
+    return {
+      oneLineSummary:
+        this.cleanText(parsed.oneLineSummary, 180) || fallback.oneLineSummary,
+      whySteps: whySteps.length > 0 ? whySteps : fallback.whySteps,
+      questions: questions.length > 0 ? questions : fallback.questions,
+    };
+  }
+
+  private buildFallbackBriefing(
+    keyword: string,
+    summary: string,
+  ): LlmKeywordBriefing {
+    const label = keyword.replace(/:/g, ' ');
+    const oneLineSummary =
+      summary && !summary.startsWith('[LLM 비활성화')
+        ? summary
+        : `${label} 관련 보도와 언급량이 함께 늘며 검색 관심이 커지고 있습니다.`;
+    return {
+      oneLineSummary,
+      whySteps: [
+        `${label} 관련 이슈 발생`,
+        '관련 보도와 키워드 언급 확산',
+        '검색 관심과 랭킹 노출 증가',
+      ],
+      questions: [
+        {
+          question: '왜 지금 관심이 커졌나요?',
+          answer:
+            '관련 기사와 키워드 언급이 같은 시간대에 집중되며 트렌드 랭킹에 반영됐습니다. 상세 기사 흐름을 함께 보면 관심이 커진 계기를 더 분명하게 확인할 수 있습니다.',
+        },
+      ],
     };
   }
 }

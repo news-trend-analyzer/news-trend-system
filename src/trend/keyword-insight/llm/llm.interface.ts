@@ -9,6 +9,15 @@ export type ArticleForInsight = {
   readonly url: string;
 };
 
+export type LlmKeywordBriefing = {
+  oneLineSummary: string;
+  whySteps: string[];
+  questions: Array<{
+    question: string;
+    answer: string;
+  }>;
+};
+
 export interface LlmService {
   /**
    * 키워드와 관련 기사 본문을 바탕으로 트렌드 원인 요약 생성
@@ -33,4 +42,10 @@ export interface LlmService {
     searchQuery: string;
     intentSummary: string;
   }>;
+
+  generateKeywordBriefing(params: {
+    keyword: string;
+    summary: string;
+    articleSummaries: readonly ArticleForInsight[];
+  }): Promise<LlmKeywordBriefing>;
 }

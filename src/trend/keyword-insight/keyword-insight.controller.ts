@@ -10,6 +10,7 @@ import { plainToInstance } from 'class-transformer';
 import { ClassSerializerInterceptor } from '@nestjs/common';
 import { KeywordInsightService } from './keyword-insight.service';
 import { KeywordInsightItemDto } from './dto/keyword-insight-item.dto';
+import { KeywordInsightDetailDto } from './dto/keyword-insight-detail.dto';
 
 @Controller('trend/keyword-insight')
 @UseInterceptors(ClassSerializerInterceptor)
@@ -41,6 +42,6 @@ export class KeywordInsightController {
     if (!item) {
       throw new NotFoundException('키워드를 찾을 수 없습니다.');
     }
-    return plainToInstance(KeywordInsightItemDto, item);
+    return plainToInstance(KeywordInsightDetailDto, item);
   }
 }

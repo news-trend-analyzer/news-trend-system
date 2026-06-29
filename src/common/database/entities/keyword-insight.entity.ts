@@ -24,6 +24,9 @@ export class KeywordInsightEntity {
   @Column({ type: 'jsonb', name: 'article_ids', nullable: true })
   articleIds: number[] | null;
 
+  @Column({ type: 'jsonb', name: 'briefing', nullable: true })
+  briefing: Record<string, unknown> | null;
+
   @Column({ type: 'timestamptz', name: 'analyzed_at' })
   analyzedAt: Date;
 

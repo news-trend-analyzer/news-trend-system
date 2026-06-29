@@ -132,6 +132,21 @@ export class ArticleKeywordRepository {
     }));
   }
 
+  async countArticlesByKeyword(
+    keywordId: number,
+    hoursInterval: number = 24,
+  ): Promise<number> {
+    const query = `
+    SELECT COUNT(DISTINCT a.id) AS total
+    FROM article_keywords ak
+    JOIN articles a ON a.id = ak.article_id
+    WHERE ak.keyword_id = $1
+      AND a.published_at >= NOW() - INTERVAL '1 hour' * $2
+    `;
+    const result = await this.dataSource.query(query, [keywordId, hoursInterval]);
+    return Number.parseInt(result[0]?.total ?? '0', 10);
+  }
+
   /**
    * 키워드(normalized_text 또는 display_text)로 기사 검색
    * - 복합 키워드(BTS:공연) 시 : 기준 분리하여 1순위 정확 매칭, 2순위 단일 키워드 관련성 매칭

@@ -15,6 +15,7 @@ export class KeywordInsightRepository {
     analysisDate: string;
     summary: string;
     articleIds?: number[] | null;
+    briefing?: Record<string, unknown> | null;
     analyzedAt: Date;
   }): Promise<KeywordInsightEntity> {
     const entity = {
@@ -22,6 +23,7 @@ export class KeywordInsightRepository {
       analysisDate: params.analysisDate,
       summary: params.summary,
       articleIds: params.articleIds ?? null,
+      briefing: params.briefing ?? null,
       analyzedAt: params.analyzedAt,
     } satisfies Partial<KeywordInsightEntity>;
     await this.repository.upsert(entity, ['keywordId', 'analysisDate']);
