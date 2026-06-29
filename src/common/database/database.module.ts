@@ -8,10 +8,12 @@ import { ArticleKeywordEntity } from './entities/article-keyword.entity';
 import { KeywordTimeseriesEntity } from './entities/keyword-timeseries.entity';
 import { KeywordAliasEntity } from './entities/keyword-alias.entity';
 import { KeywordInsightEntity } from './entities/keyword-insight.entity';
+import { TrendKeywordQueryEntity } from './entities/trend-keyword-query.entity';
 import { ArticleRepository } from './article.repository';
 import { KeywordRepository } from './keyword.repository';
 import { ArticleKeywordRepository } from './article-keyword.repository';
 import { KeywordInsightRepository } from './keyword-insight.repository';
+import { TrendKeywordQueryRepository } from './trend-keyword-query.repository';
 /**
  * 데이터베이스 연동 모듈
  * TypeORM을 사용하여 PostgreSQL 연결
@@ -35,6 +37,7 @@ import { KeywordInsightRepository } from './keyword-insight.repository';
               KeywordTimeseriesEntity,
               KeywordAliasEntity,
               KeywordInsightEntity,
+              TrendKeywordQueryEntity,
             ],
             synchronize: false,
             logging: configService.get<string>('NODE_ENV') === 'development',
@@ -54,6 +57,7 @@ import { KeywordInsightRepository } from './keyword-insight.repository';
             KeywordTimeseriesEntity,
             KeywordAliasEntity,
             KeywordInsightEntity,
+            TrendKeywordQueryEntity,
           ],
           synchronize: false,
           logging: configService.get<string>('NODE_ENV') === 'development',
@@ -67,6 +71,7 @@ import { KeywordInsightRepository } from './keyword-insight.repository';
       KeywordTimeseriesEntity,
       KeywordAliasEntity,
       KeywordInsightEntity,
+      TrendKeywordQueryEntity,
     ]),
   ],
   providers: [
@@ -74,6 +79,7 @@ import { KeywordInsightRepository } from './keyword-insight.repository';
     KeywordRepository,
     ArticleKeywordRepository,
     KeywordInsightRepository,
+    TrendKeywordQueryRepository,
   ],
   exports: [
     TypeOrmModule,
@@ -81,7 +87,7 @@ import { KeywordInsightRepository } from './keyword-insight.repository';
     KeywordRepository,
     ArticleKeywordRepository,
     KeywordInsightRepository,
+    TrendKeywordQueryRepository,
   ],
 })
 export class DatabaseModule {}
-

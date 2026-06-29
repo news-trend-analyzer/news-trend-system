@@ -7,6 +7,8 @@ import { DatabaseModule } from '../common/database/database.module';
 import { DataReportController } from './data-report/data-report.controller';
 import { DataReportService } from './data-report/data-report.service';
 import { KeywordInsightModule } from './keyword-insight/keyword-insight.module';
+import { LlmModule } from './keyword-insight/llm/llm.module';
+import { TrendKeywordQueryService } from './trend-keyword-query.service';
 
 @Module({
   imports: [
@@ -16,10 +18,10 @@ import { KeywordInsightModule } from './keyword-insight/keyword-insight.module';
     }),
     DatabaseModule,
     KeywordInsightModule,
+    LlmModule,
   ],
   controllers: [TrendController, DataReportController],
-  providers: [TrendAnalysisService, DataReportService],
+  providers: [TrendAnalysisService, DataReportService, TrendKeywordQueryService],
   exports: [TrendAnalysisService, DataReportService],
 })
 export class TrendModule {}
-

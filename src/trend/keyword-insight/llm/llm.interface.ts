@@ -19,4 +19,18 @@ export interface LlmService {
     keyword: string;
     articleSummaries: readonly ArticleForInsight[];
   }): Promise<string>;
+
+  /**
+   * 랭킹 키워드의 사용자 노출/검색용 표현 생성
+   * @param params keyword, articleSummaries
+   * @returns title/searchQuery/intentSummary
+   */
+  generateTrendKeywordQuery(params: {
+    keyword: string;
+    articleSummaries: readonly ArticleForInsight[];
+  }): Promise<{
+    title: string;
+    searchQuery: string;
+    intentSummary: string;
+  }>;
 }

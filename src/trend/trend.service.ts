@@ -11,6 +11,7 @@ import { Job, Queue, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { ScrapedArticle } from '../collector/models/article.model';
 import { KeywordRepository } from '../common/database/keyword.repository';
+import { TrendKeywordQueryService } from './trend-keyword-query.service';
 
 /** 24h 상위 트렌드 DB→Redis 갱신 주기(초). @Cron 표현식과 함께 유지 */
 const TOP_TRENDS_REFRESH_SECONDS = 30;
@@ -97,6 +98,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
     @InjectQueue('articles') private readonly articlesQueue: Queue,
     private readonly configService: ConfigService,
     private readonly keywordRepository: KeywordRepository,
+    private readonly trendKeywordQueryService: TrendKeywordQueryService,
   ) {
     this.redis = new Redis({
       host: this.configService.get<string>('REDIS_HOST', 'localhost'),
@@ -496,6 +498,7 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
 
     const fetchLimit = Math.max(this.SNAPSHOT_CANDIDATE_LIMIT, this.TOP_TRENDS_API_MAX_LIMIT);
     const candidates = await this.keywordRepository.findTopKeywords24h(fetchLimit);
+    const queryMap = await this.trendKeywordQueryService.getActiveQueryMap(candidates);
 
     const trends = candidates.map((k, idx) => {
       const currentRank = idx + 1;
@@ -516,7 +519,10 @@ export class TrendAnalysisService implements OnModuleInit, OnModuleDestroy {
         }
       }
 
-      const label = k.displayText?.trim() || k.normalizedText;
+      const label =
+        queryMap.get(keywordId)?.searchQuery ||
+        k.displayText?.trim() ||
+        k.normalizedText;
 
       return {
         id: keywordId,
