@@ -123,6 +123,9 @@ services:
       - BUCKET_MINUTES=${BUCKET_MINUTES:-5}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.4-nano}
+      - COUPANG_ACCESS_KEY=${COUPANG_ACCESS_KEY:-}
+      - COUPANG_SECRET_KEY=${COUPANG_SECRET_KEY:-}
+      - COUPANG_PARTNERS_DOMAIN=${COUPANG_PARTNERS_DOMAIN:-https://api-gateway.coupang.com}
     depends_on:
       redis:
         condition: service_healthy
@@ -228,5 +231,4 @@ volumes:
 networks:
   news-trend-network:
     driver: bridge
-
 
