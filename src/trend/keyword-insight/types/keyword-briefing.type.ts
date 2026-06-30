@@ -10,12 +10,19 @@ export type KeywordBriefingTrendSignal = {
   basis: string;
 };
 
+export type KeywordCommerceHint = {
+  label: string;
+  query: string;
+  reason: string;
+};
+
 export type KeywordBriefing = {
   oneLineSummary: string;
   whySteps: string[];
   trendSignal: KeywordBriefingTrendSignal;
   questions: KeywordBriefingQuestion[];
   essentialArticleIds: number[];
+  commerceHints: KeywordCommerceHint[];
 };
 
 export type LlmKeywordBriefing = {
@@ -25,4 +32,5 @@ export type LlmKeywordBriefing = {
     question: string;
     answer: string;
   }>;
+  commerceHints: KeywordCommerceHint[];
 };

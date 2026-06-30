@@ -255,6 +255,24 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
         analyzedAt: insight.analyzedAt,
       });
     }
+    if (
+      insight &&
+      storedBriefing &&
+      !this.hasStoredCommerceHints(storedBriefing) &&
+      insight.summary &&
+      articleCount > 0
+    ) {
+      storedBriefing = await this.generateAndPersistBriefingForExistingInsight({
+        keywordId,
+        analysisDate: insight.analysisDate,
+        keyword: label,
+        summary: insight.summary,
+        articleIds,
+        articleCount,
+        trendSignal,
+        analyzedAt: insight.analyzedAt,
+      });
+    }
     const briefing = this.normalizeStoredBriefing({
       keyword: label,
       summary: insight?.summary ?? null,
@@ -317,6 +335,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
         interestCount: interestBase * 100 + (params.llmBriefing.questions.length - index) * 17,
       })),
       essentialArticleIds: params.articleIds.slice(0, 5),
+      commerceHints: params.llmBriefing.commerceHints,
     };
   }
 
@@ -392,9 +411,9 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
     return {
       oneLineSummary,
       whySteps: [
-        '관련 이슈 발생',
-        '보도 확산',
-        '검색 관심 증가',
+        '관련 이슈가 관심의 출발점',
+        '보도와 언급이 빠르게 확산',
+        '후속 영향 기대감이 주목도 확대',
       ],
       trendSignal: params.trendSignal,
       questions: [
@@ -406,6 +425,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
         },
       ],
       essentialArticleIds: params.articleIds.slice(0, 5),
+      commerceHints: [],
     };
   }
 
@@ -427,9 +447,7 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
         typeof briefing.oneLineSummary === 'string'
           ? briefing.oneLineSummary
           : fallback.oneLineSummary,
-      whySteps: Array.isArray(briefing.whySteps)
-        ? briefing.whySteps.filter((step): step is string => typeof step === 'string')
-        : fallback.whySteps,
+      whySteps: this.normalizeStoredWhySteps(briefing, fallback),
       trendSignal: params.trendSignal,
       questions: Array.isArray(briefing.questions)
         ? briefing.questions
@@ -448,14 +466,21 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
         params.articleIds.length > 0
           ? params.articleIds.slice(0, 5)
           : fallback.essentialArticleIds,
+      commerceHints: this.normalizeStoredCommerceHints(briefing, fallback),
     };
   }
 
   private buildTrendSignal(
     timeSeries: Array<{ scoreSum: number | string; freqSum: number | string }>,
   ): KeywordBriefingTrendSignal {
-    const recent = timeSeries.slice(0, 3).reduce((sum, item) => sum + Number(item.scoreSum), 0);
-    const previous = timeSeries.slice(3, 6).reduce((sum, item) => sum + Number(item.scoreSum), 0);
+    const bucketMinutes = this.configService.get<number>('BUCKET_MINUTES', 5);
+    const bucketsPerHour = Math.max(Math.ceil(60 / bucketMinutes), 1);
+    const recent = timeSeries
+      .slice(0, bucketsPerHour)
+      .reduce((sum, item) => sum + Number(item.scoreSum), 0);
+    const previous = timeSeries
+      .slice(bucketsPerHour, bucketsPerHour * 2)
+      .reduce((sum, item) => sum + Number(item.scoreSum), 0);
     const changeRate =
       previous > 0
         ? Math.round(((recent - previous) / previous) * 100)
@@ -473,8 +498,81 @@ export class KeywordInsightService implements OnModuleInit, OnModuleDestroy {
     return {
       label,
       changeRate,
-      basis: '최근 3개 집계 구간 score_sum 기준',
+      basis: '최근 1시간 score_sum 기준',
     };
+  }
+
+  private normalizeStoredWhySteps(
+    briefing: Partial<KeywordBriefing>,
+    fallback: KeywordBriefing,
+  ): string[] {
+    const legacyWhySteps = (briefing as { whySteps?: unknown }).whySteps;
+    if (Array.isArray(legacyWhySteps)) {
+      const steps = legacyWhySteps
+        .filter((step): step is string => typeof step === 'string')
+        .slice(0, 5);
+      if (steps.length > 0) {
+        return steps;
+      }
+    }
+
+    const legacyAnalysisPoints = (briefing as { analysisPoints?: unknown }).analysisPoints;
+    if (Array.isArray(legacyAnalysisPoints)) {
+      const steps = legacyAnalysisPoints
+        .map((point) => {
+          if (!point || typeof point !== 'object') {
+            return '';
+          }
+          const title = (point as { title?: unknown }).title;
+          return typeof title === 'string' ? title : '';
+        })
+        .filter(Boolean)
+        .slice(0, 5);
+      if (steps.length > 0) {
+        return steps;
+      }
+    }
+
+    return fallback.whySteps;
+  }
+
+  private hasStoredCommerceHints(briefing: Record<string, unknown>): boolean {
+    return Object.prototype.hasOwnProperty.call(briefing, 'commerceHints');
+  }
+
+  private normalizeStoredCommerceHints(
+    briefing: Partial<KeywordBriefing>,
+    fallback: KeywordBriefing,
+  ): KeywordBriefing['commerceHints'] {
+    const hints = (briefing as { commerceHints?: unknown }).commerceHints;
+    if (!Array.isArray(hints)) {
+      return fallback.commerceHints;
+    }
+    return hints
+      .map((hint) => {
+        if (!hint || typeof hint !== 'object') {
+          return null;
+        }
+        const item = hint as {
+          label?: unknown;
+          query?: unknown;
+          reason?: unknown;
+        };
+        if (
+          typeof item.label !== 'string' ||
+          typeof item.query !== 'string' ||
+          typeof item.reason !== 'string'
+        ) {
+          return null;
+        }
+        return {
+          label: item.label,
+          query: item.query,
+          reason: item.reason,
+        };
+      })
+      .filter((hint): hint is KeywordBriefing['commerceHints'][number] => hint !== null)
+      .slice(0, 3);
   }
 
 }

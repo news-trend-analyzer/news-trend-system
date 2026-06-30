@@ -9,6 +9,8 @@ import { DataReportService } from './data-report/data-report.service';
 import { KeywordInsightModule } from './keyword-insight/keyword-insight.module';
 import { LlmModule } from './keyword-insight/llm/llm.module';
 import { TrendKeywordQueryService } from './trend-keyword-query.service';
+import { CoupangAffiliateController } from './affiliate/coupang-affiliate.controller';
+import { CoupangAffiliateService } from './affiliate/coupang-affiliate.service';
 
 @Module({
   imports: [
@@ -20,8 +22,13 @@ import { TrendKeywordQueryService } from './trend-keyword-query.service';
     KeywordInsightModule,
     LlmModule,
   ],
-  controllers: [TrendController, DataReportController],
-  providers: [TrendAnalysisService, DataReportService, TrendKeywordQueryService],
+  controllers: [TrendController, DataReportController, CoupangAffiliateController],
+  providers: [
+    TrendAnalysisService,
+    DataReportService,
+    TrendKeywordQueryService,
+    CoupangAffiliateService,
+  ],
   exports: [TrendAnalysisService, DataReportService],
 })
 export class TrendModule {}

@@ -143,6 +143,18 @@ class EnvironmentVariables {
   @IsOptional()
   @IsString()
   OPENAI_MODEL?: string;
+
+  @IsOptional()
+  @IsString()
+  COUPANG_ACCESS_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  COUPANG_SECRET_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  COUPANG_PARTNERS_DOMAIN?: string;
 }
 
 /**
@@ -171,4 +183,3 @@ export function validate(config: Record<string, unknown>): EnvironmentVariables 
 
   return validatedConfig;
 }
-

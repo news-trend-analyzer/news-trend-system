@@ -16,6 +16,11 @@ export type LlmKeywordBriefing = {
     question: string;
     answer: string;
   }>;
+  commerceHints: Array<{
+    label: string;
+    query: string;
+    reason: string;
+  }>;
 };
 
 export interface LlmService {
